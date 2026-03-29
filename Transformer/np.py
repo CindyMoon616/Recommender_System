@@ -75,10 +75,8 @@ class MultiHeadAttention:
         if mask is not None:
             if mask.ndim==2: # l*L -> B*n*L*L
                 mask = mask[None, None, :, :]
-                mask = np.broadcast_to(mask, (batch_size, n_head, mask.shape[-2], mask.shape[-1]))
             elif mask.ndim==3:
                 mask = mask[:,None, :, :]
-                mask = np.broadcast_to(mask, (mask.shape[0], n_head, mask.shape[-2], mask.shape[-1]))
             score=np.where(mask==0,-1e9,score)
 
         score_max=np.max(score,axis=-1,keepdims=True)
