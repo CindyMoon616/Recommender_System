@@ -10,5 +10,5 @@ def AUC(y_scores,y_true):
     rank_sum=0
     for i in range(len(sorted_labels)):
         if sorted_labels[i]==1:
-            rank_sum += (i+1)
-    auc = (rank_sum-pos_cnt*(pos_cnt+1)/2)/(pos_cnt*neg_cnt)
+            rank_sum += i
+    auc = (rank_sum-pos_cnt*(pos_cnt-1)/2)/(pos_cnt*neg_cnt)
