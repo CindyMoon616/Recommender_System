@@ -111,6 +111,7 @@ if __name__ == "__main__":
     print("Input shape:",X.shape)
     print("Attention weight shape:",weight.shape)
     print("Output shape",output.shape)
+    
 
         
         

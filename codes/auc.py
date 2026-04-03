@@ -1,3 +1,4 @@
+import numpy as np
 def AUC(y_scores,y_true):
     # 按照预测分数升序排序
     indexs=sorted(range(len(y_scores)),key=lambda i:y_scores[i])
@@ -12,6 +13,7 @@ def AUC(y_scores,y_true):
         if sorted_labels[i]==1:
             rank_sum += i
     auc = (rank_sum-pos_cnt*(pos_cnt-1)/2)/(pos_cnt*neg_cnt)
+    return auc
 
 def AUC_with_ties(y_scores, y_true):
     # 创建(score, label, original_index)的元组
