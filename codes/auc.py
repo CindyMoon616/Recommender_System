@@ -15,6 +15,50 @@ def AUC(y_scores,y_true):
     auc = (rank_sum-pos_cnt*(pos_cnt-1)/2)/(pos_cnt*neg_cnt)
     return auc
 
+def GAUC(y_scores, y_true, group_ids):
+    """
+    计算 Group AUC
+    
+    参数:
+        y_scores: 预测分数
+        y_true: 真实标签
+        group_ids: 分组ID（如用户ID）
+    """
+    # 按组聚合数据
+    groups = {}
+    for i in range(len(y_scores)):
+        gid = group_ids[i]
+        if gid not in groups:
+            groups[gid] = {'scores': [], 'labels': []}
+        groups[gid]['scores'].append(y_scores[i])
+        groups[gid]['labels'].append(y_true[i])
+    
+    # 计算每组的 AUC 和权重
+    total_auc = 0
+    total_weight = 0
+    
+    for gid, data in groups.items():
+        scores = np.array(data['scores'])
+        labels = np.array(data['labels'])
+        
+        # 跳过只有一个类别的组
+        if len(np.unique(labels)) < 2:
+            continue
+            
+        # 计算该组的 AUC
+        group_auc = AUC(scores, labels)
+        
+        # 权重通常用正负样本数的乘积
+        pos_cnt = np.sum(labels)
+        neg_cnt = len(labels) - pos_cnt
+        weight = pos_cnt * neg_cnt
+        
+        total_auc += group_auc * weight
+        total_weight += weight
+    
+    return total_auc / total_weight if total_weight > 0 else 0
+
+
 def AUC_with_ties(y_scores, y_true):
     # 创建(score, label, original_index)的元组
     data = [(y_scores[i], y_true[i], i) for i in range(len(y_scores))]
