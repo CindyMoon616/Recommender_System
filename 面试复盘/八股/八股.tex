@@ -247,4 +247,96 @@ Agent模式的核心是“边执行，边调整”。系统通常先观察当前
 
 在实际AI Coding系统中，二者往往并非完全割裂，而是以混合方式共同存在。对于多数中高复杂度的AI Coding任务，更有效的使用方式通常不是单独采用Plan模式或Agent模式，而是先由plan生成可审阅的任务计划，以明确整体修改方向、影响范围与验证路径，再由Agent在执行过程中结合编译结果、测试反馈与环境状态进行动态调整。对于简单且边界清晰的小规模任务，则可直接进入Agent执行阶段，以避免过度规划带来的额外开销。
 
+\section{Vibe Coding与Spec Coding的区别}
+
+Vibe Coding和Spec Coding代表了AI辅助编程中两种不同的交互范式，前者强调即时性和流畅性，后者强调结构化和可控性。
+
+\subsection{Vibe Coding}
+
+Vibe Coding的核心是\textbf{"跟着感觉走，快速迭代"}。开发者通过自然语言与AI进行\textbf{对话式交互}，描述想法或需求，AI立即生成代码或进行修改，开发者查看结果后继续提出调整意见，形成快速的反馈循环。整个过程类似于与一位结对编程伙伴的即兴协作，强调\textbf{思维流畅性}和\textbf{创造性探索}。
+
+\textbf{典型特征}:
+\begin{itemize}
+    \item \textbf{交互方式}: 自由对话，需求可以模糊、渐进式明确
+    \item \textbf{工作流程}: 提出想法 → AI生成 → 查看结果 → 继续调整（循环）
+    \item \textbf{适用场景}: 原型开发、探索性编程、快速验证想法、学习新技术
+    \item \textbf{心智模型}: "边想边做"，允许需求在过程中演化
+\end{itemize}
+
+\textbf{优势}:
+\begin{itemize}
+    \item 上手门槛低，无需预先完整规划
+    \item 快速启动，适合灵感驱动的开发
+    \item 灵活性高，可随时调整方向
+    \item 学习曲线平缓，适合初学者
+\end{itemize}
+
+\textbf{劣势}:
+\begin{itemize}
+    \item 缺乏整体规划，容易产生技术债务
+    \item 对话历史过长时，AI可能遗忘早期上下文
+    \item 难以追溯决策过程和变更历史
+    \item 复杂项目中容易失控，代码质量参差不齐
+\end{itemize}
+
+\subsection{Spec Coding}
+
+Spec Coding的核心是\textbf{"先定义规格，再分步实现"}。开发者首先编写结构化的\textbf{规格文档}(Spec)，明确需求、设计方案、实现任务和验收标准，然后AI根据Spec逐步执行任务。整个过程类似于传统软件工程中的需求分析和设计阶段，强调\textbf{可控性}和\textbf{可追溯性}。
+
+\textbf{典型特征}:
+\begin{itemize}
+    \item \textbf{交互方式}: 结构化文档，需求需要预先明确
+    \item \textbf{工作流程}: 编写Spec → 审阅计划 → AI执行任务 → 验证结果
+    \item \textbf{适用场景}: 复杂功能开发、多人协作、需要文档化的项目、关键系统
+    \item \textbf{心智模型}: "先想清楚再做"，需求相对稳定
+\end{itemize}
+
+\textbf{优势}:
+\begin{itemize}
+    \item 整体规划清晰，代码质量更可控
+    \item 任务可拆解、可并行、可追溯
+    \item 适合团队协作，Spec可作为沟通文档
+    \item 支持渐进式开发，可分阶段验证
+    \item 便于代码审查和知识传承
+\end{itemize}
+
+\textbf{劣势}:
+\begin{itemize}
+    \item 前期投入较大，需要编写详细Spec
+    \item 灵活性较低，需求变更需要更新Spec
+    \item 学习成本较高，需要掌握Spec编写规范
+    \item 对于简单任务可能过度设计
+\end{itemize}
+
+\subsection{两种模式的对比与选择}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{维度} & \textbf{Vibe Coding} & \textbf{Spec Coding} \\
+\midrule
+交互方式 & 自由对话 & 结构化文档 \\
+需求明确度 & 可模糊、渐进式 & 需预先明确 \\
+启动速度 & 快 & 慢 \\
+适用复杂度 & 简单到中等 & 中等到复杂 \\
+代码质量 & 不稳定 & 较稳定 \\
+可追溯性 & 弱 & 强 \\
+团队协作 & 困难 & 友好 \\
+学习曲线 & 平缓 & 陡峭 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{实际应用建议}:
+\begin{itemize}
+    \item \textbf{快速原型、探索性开发}: 优先使用Vibe Coding
+    \item \textbf{生产级功能、复杂系统}: 优先使用Spec Coding
+    \item \textbf{混合使用}: 用Vibe Coding快速验证想法，确定方向后转为Spec Coding进行正式开发
+    \item \textbf{个人项目}: 根据个人偏好选择，Vibe Coding更自由
+    \item \textbf{团队项目}: Spec Coding更适合协作和知识共享
+\end{itemize}
+
+\textbf{总结}: Vibe Coding强调\textbf{速度和灵活性}，适合探索和快速迭代；Spec Coding强调\textbf{质量和可控性}，适合复杂项目和团队协作。两者并非对立，而是互补关系，开发者应根据项目阶段、复杂度和团队情况灵活选择。
+
 \end{document}
