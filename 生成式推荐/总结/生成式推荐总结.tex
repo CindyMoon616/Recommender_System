@@ -19,7 +19,7 @@
 \begin{itemize}
     \item 将召回任务建模成一个序列预测问题，根据用户过去的交互历史，从当前的候选物品池选出预测概率最高的物料。当下一个token是负样本或者不是item，则对应掩码设置为0
     \item 不再将 item 和 action 视为一个整体事件，而是将它们拆分并交错插入到时间序列中，在item位置进行预测，在action位置，Loss进行掩码，不进行预测
-    \item 逐点聚合注意力、通过Stochastic Length（SL，主动对厂里是进行稀疏抽样）增加稀疏性、简化Transformer结构
+    \item 逐点聚合注意力、通过Stochastic Length（SL，主动对长历史进行稀疏抽样）增加稀疏性、简化Transformer结构
     \item M-FALCON使模型复杂度能够随着候选数线性扩展
 \end{itemize}
 

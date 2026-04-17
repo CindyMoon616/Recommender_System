@@ -1,0 +1,433 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[UTF8]{ctex}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\geometry{left=2.5cm,right=2.5cm,top=2.5cm,bottom=2.5cm}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red}
+}
+
+\title{\textbf{MovieLens-1M数据集详解与\\推荐系统面试问题总结}}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{MovieLens-1M数据集概述}
+
+\subsection{数据集基本信息}
+
+MovieLens-1M是明尼苏达大学GroupLens研究组发布的经典推荐系统数据集。
+
+\textbf{规模：}
+\begin{itemize}
+    \item 评分数量：1,000,209条
+    \item 用户数量：6,040个
+    \item 电影数量：3,706部
+    \item 评分范围：1-5分（整数）
+    \item 时间跨度：2000年左右
+\end{itemize}
+
+\textbf{数据密度：}
+\begin{itemize}
+    \item 平均每个用户评分：165.6条
+    \item 平均每部电影被评分：269.9次
+    \item 稀疏度：95.5\%（大部分用户-电影对没有交互）
+\end{itemize}
+
+\subsection{原始数据文件详解}
+
+数据集包含三个核心文件，均采用双冒号(::)分隔：
+
+\subsubsection{movies.dat - 电影信息}
+
+\textbf{格式：} MovieID::Title::Genres
+
+\textbf{示例：}
+\begin{lstlisting}
+1::Toy Story (1995)::Animation|Children's|Comedy
+2::Jumanji (1995)::Adventure|Children's|Fantasy
+\end{lstlisting}
+
+\textbf{字段说明：}
+\begin{itemize}
+    \item MovieID：电影唯一标识，范围1-3952
+    \item Title：电影名称（英文），包含上映年份
+    \item Genres：电影类型，用竖线(|)分隔，共18种类型
+\end{itemize}
+
+\textbf{18种电影类型：}
+Action, Adventure, Animation, Children's, Comedy, Crime, Documentary, Drama, Fantasy, Film-Noir, Horror, Musical, Mystery, Romance, Sci-Fi, Thriller, War, Western
+
+\subsubsection{users.dat - 用户信息}
+
+\textbf{格式：} UserID::Gender::Age::Occupation::Zip-code
+
+\textbf{示例：}
+\begin{lstlisting}
+1::F::1::10::48067
+2::M::56::16::70072
+\end{lstlisting}
+
+\textbf{字段说明：}
+\begin{itemize}
+    \item UserID：用户唯一标识，范围1-6040
+    \item Gender：性别，M(男)/F(女)
+    \item Age：年龄段编码（7个档位）
+    \item Occupation：职业编码（21种职业）
+    \item Zip-code：邮政编码（本项目未使用）
+\end{itemize}
+
+\textbf{年龄段编码：}
+\begin{itemize}
+    \item 1: "Under 18"
+    \item 18: "18-24"
+    \item 25: "25-34"
+    \item 35: "35-44"
+    \item 45: "45-49"
+    \item 50: "50-55"
+    \item 56: "56+"
+\end{itemize}
+
+\textbf{职业编码（部分）：}
+0-其他, 1-学术/教育, 2-艺术家, 3-文员, 4-大学生, 7-工程师, 10-律师, 12-程序员, 16-退休, 17-销售, 20-作家等
+
+\subsubsection{ratings.dat - 评分记录}
+
+\textbf{格式：} UserID::MovieID::Rating::Timestamp
+
+\textbf{示例：}
+\begin{lstlisting}
+1::1193::5::978300760
+1::661::3::978302109
+\end{lstlisting}
+
+\textbf{字段说明：}
+\begin{itemize}
+    \item UserID：用户ID
+    \item MovieID：电影ID
+    \item Rating：评分，1-5分（整数）
+    \item Timestamp：Unix时间戳（本项目未使用）
+\end{itemize}
+
+\subsection{数据预处理与划分}
+
+\subsubsection{冷启动阈值设定}
+
+\textbf{512阈值规则：}
+\begin{itemize}
+    \item 交互次数 > 512：老item（90\%）
+    \item 交互次数 $\leq$ 512：新item（10\%）
+    \item 阈值选择：按9:1比例划分时，恰好卡在512条交互
+\end{itemize}
+
+\textbf{统计结果：}
+\begin{itemize}
+    \item 老item：约3,335部电影（90\%）
+    \item 新item：约371部电影（10\%）
+    \item 新item平均交互数：约100-200条
+\end{itemize}
+
+\subsubsection{数据集划分}
+
+\textbf{训练集：}
+\begin{itemize}
+    \item big\_train\_main.csv：老item的所有交互数据
+    \item 用于预训练DNN基础模型
+    \item 约90万条评分记录
+\end{itemize}
+
+\textbf{元学习集：}
+\begin{itemize}
+    \item train\_oneshot\_a\_w\_ngb\_hist.csv：新item的batch\_a数据
+    \item train\_oneshot\_b\_w\_ngb\_hist.csv：新item的batch\_b数据
+    \item 同一个item的不同交互记录，用于MAML训练
+    \item 每个约5万条记录
+\end{itemize}
+
+\textbf{测试集：}
+\begin{itemize}
+    \item test\_oneshot\_a\_hist.csv：新item的支持集
+    \item test\_oneshot\_b\_hist.csv：新item的查询集
+    \item 用于评估冷启动性能
+\end{itemize}
+
+\section{特征工程详解}
+
+\subsection{特征编码方案}
+
+项目采用混合编码方式，包含6个one-hot特征和2个multi-hot特征。
+
+\subsubsection{One-hot特征（6个）}
+
+\begin{enumerate}
+    \item \textbf{user\_id}：用户ID，6040个取值
+    \item \textbf{movie\_id}：电影ID，3706个取值
+    \item \textbf{gender}：性别，2个取值（M/F）
+    \item \textbf{age}：年龄段，7个取值（1,18,25,35,45,50,56）
+    \item \textbf{occupation}：职业，21个取值
+    \item \textbf{release\_year}：上映年份，约80个取值（1920-2000）
+\end{enumerate}
+
+\subsubsection{Multi-hot特征（2个）}
+
+\begin{enumerate}
+    \item \textbf{title}：电影标题词汇
+    \begin{itemize}
+        \item 最多5个词（不足补0）
+        \item 词典大小：约3000个英文单词
+        \item 编码方式：词频统计后分配ID
+    \end{itemize}
+    
+    \item \textbf{genres}：电影类型
+    \begin{itemize}
+        \item 最多5个类型（不足补0）
+        \item 类型数量：18种
+        \item 编码方式：类型名称映射到ID
+    \end{itemize}
+\end{enumerate}
+
+\subsection{特征空间计算}
+
+\textbf{总特征维度：} $n\_ft = 11134$
+
+\textbf{计算方式：}
+\begin{align*}
+n\_ft &= \text{user\_id} + \text{movie\_id} + \text{gender} + \text{age} \\
+      &\quad + \text{occupation} + \text{release\_year} + \text{title\_vocab} + \text{genres} \\
+      &= 6040 + 3706 + 2 + 7 + 21 + 80 + 3000 + 18 \\
+      &= 11134
+\end{align*}
+
+\subsection{数据格式说明}
+
+\subsubsection{基础格式（17列）}
+
+\textbf{示例：}
+\begin{lstlisting}
+1 6909 195 9 3 2217 11087 4726 3232 2235 3233 3234 10 0 0 0 0
+\end{lstlisting}
+
+\textbf{列含义：}
+\begin{itemize}
+    \item 第1列：label（评分，0/1二分类）
+    \item 第2-7列：6个one-hot特征（user\_id, movie\_id, gender, age, occupation, release\_year）
+    \item 第8-17列：10个multi-hot特征（5个title词 + 5个genres类型）
+\end{itemize}
+
+\subsubsection{带历史信息格式（197列）}
+
+\textbf{示例：}
+\begin{lstlisting}
+1 6909 195 9 3 2217 11087 4726 3232 2235 3233 3234 10 0 0 0 0 
+5359 5381 5413 5453 5517 5518 5520 5558 5570 5627 5651 5664 
+5703 5724 5727 5777 5790 5796 5818 5845 ...
+\end{lstlisting}
+
+\textbf{列含义：}
+\begin{itemize}
+    \item 第1-17列：基础特征（同上）
+    \item 第18-177列：160列邻居特征（20个邻居 × 8个特征）
+    \item 第178-197列：20个历史用户ID（用于去噪）
+\end{itemize}
+
+\textbf{历史用户ID（hist特征）：}
+\begin{itemize}
+    \item 含义：最近点击过当前电影的20个用户ID
+    \item 作用：通过用户embedding平均来增强item embedding
+    \item 去噪原理：多个用户的平均表示更稳定，减少噪声影响
+\end{itemize}
+
+\section{推荐系统面试问题详解}
+
+\subsection{数据集相关问题}
+
+\subsubsection{Q1: 介绍下数据集}
+
+\textbf{回答要点：}
+
+MovieLens-1M包含100万条评分，6040个用户，3706部电影。我们将交互次数>512的定义为老item（90\%），≤512的为新item（10\%），用于模拟冷启动场景。数据包含用户属性（性别、年龄、职业）和电影属性（标题、类型、年份），共8个特征维度。
+
+\subsubsection{Q2: 哪些特征做了哪些编码}
+
+\textbf{回答要点：}
+
+6个one-hot特征：user\_id、movie\_id、gender、age、occupation、release\_year。2个multi-hot特征：title（最多5个词）、genres（最多5个类型）。总特征空间11134维。
+
+\subsubsection{Q3: 电影名字怎么编码，是字典化的吗}
+
+\textbf{回答要点：}
+
+是的，电影标题经过分词后建立词典。统计所有电影标题的词频，高频词分配较小ID。每个标题取前5个词，不足补0。词典大小约3000个英文单词。
+
+\subsubsection{Q4: 字典多少个}
+
+\textbf{回答要点：}
+
+英文词典约3000个单词。MovieLens-1M是英文数据集，不涉及中文。
+
+\subsubsection{Q5: 年龄怎么编号}
+
+\textbf{回答要点：}
+
+7个年龄段：1(Under 18)、18(18-24)、25(25-34)、35(35-44)、45(45-49)、50(50-55)、56(56+)。直接使用数据集提供的编码，无需额外处理。
+
+\subsection{模型架构问题}
+
+\subsubsection{Q6: 为什么对embedding做梯度下降而不是对生成器参数}
+
+\textbf{回答要点：}
+
+推荐系统的目标是快速适应新item，而不是学习新任务的模型参数。对embedding做梯度下降可以直接优化item表示，适应新交互数据。生成器参数在元学习阶段已经学好，预测时保持不变。
+
+\subsubsection{Q7: batch\_a和batch\_b是什么关系}
+
+\textbf{回答要点：}
+
+同一个item的不同交互记录。batch\_a用于第一次梯度下降（模拟few-shot场景），batch\_b用于评估适应后的效果。这样生成器学会如何生成易于快速适应的embedding。
+
+\subsubsection{Q8: 冷启动的本质是什么}
+
+\textbf{回答要点：}
+
+新item没有历史交互，无法训练出有效的ID embedding。通过属性特征（标题、类型、年份）生成初始embedding，再利用少量交互数据快速调整，实现快速冷启动。
+
+\subsubsection{Q9: 为什么需要cold\_loss和warm\_loss}
+
+\textbf{回答要点：}
+
+标准MAML只优化warm\_loss（适应后的性能）。推荐系统需要同时考虑zero-shot（直接用生成器）和few-shot（加warm-up）场景，所以用0.1×cold\_loss + 0.9×warm\_loss联合优化。
+
+\subsubsection{Q10: 预测时怎么做}
+
+\textbf{回答要点：}
+
+支持两种模式：1) Zero-shot：直接用生成器输出的embedding预测；2) Few-shot：收集少量交互数据（如10-50条），在batch\_a上做一次梯度下降，得到适应后的embedding再预测。
+
+\subsection{技术细节问题}
+
+\subsubsection{Q11: W\_SENET参数是什么}
+
+\textbf{回答要点：}
+
+3×3的注意力权重矩阵，用于自适应调整3个属性特征（release\_year、title、genres）的重要性。采用SENet思想，通过特征的全局信息动态计算权重。
+
+\subsubsection{Q12: 去噪模块怎么实现}
+
+\textbf{回答要点：}
+
+用最近点击该电影的20个用户的embedding平均来增强item embedding。具体流程：生成器输出 → 拼接20个用户embedding → 平均池化 → MLP → 最终embedding。除以20而非21，给用户信息更高权重。
+
+\subsubsection{Q13: 对比学习怎么做}
+
+\textbf{回答要点：}
+
+简化版对比学习，batch级别整体相似度。同一item的不同batch（batch\_a和batch\_b）作为正样本对，最大化它们的相似度。没有显式的item级负样本采样。
+
+\subsubsection{Q14: GAUC怎么实现}
+
+\textbf{回答要点：}
+
+代码实现了GAUC但实际用的是普通AUC。GAUC是按user\_id分组，每个用户单独计算AUC后加权平均，权重是该用户的样本数。更适合评估个性化推荐效果。
+
+\subsubsection{Q15: 512阈值怎么来的}
+
+\textbf{回答要点：}
+
+按9:1比例划分老item和新item时，统计所有电影的交互次数，排序后90\%分位点恰好在512条。这是数据驱动的阈值，不是人为设定。
+
+\subsection{工程实现问题}
+
+\subsubsection{Q16: 技术栈是什么}
+
+\textbf{回答要点：}
+
+Python 3.6 + PyTorch 1.7 + NumPy 1.19。数据格式用TFRecord（兼容性考虑）。训练用Adam优化器，学习率1e-3。Embedding维度10，batch size 256。
+
+\subsubsection{Q17: 训练时间多久}
+
+\textbf{回答要点：}
+
+GPU（RTX 3090）上3-5分钟。预训练DNN 1-2分钟（老item数据），元学习训练2-3分钟（新item数据）。CPU上约20-30分钟。
+
+\subsubsection{Q18: 为什么和别人项目一样}
+
+\textbf{回答要点：}
+
+基于ICML 2019论文复现，但我深入理解了每个技术细节。比如为什么对embedding而非参数做梯度下降、batch\_a和batch\_b的关系、去噪模块的设计原理等。面试更看重技术理解深度而非原创性。
+
+\subsubsection{Q19: 如何处理batch内的多条数据}
+
+\textbf{回答要点：}
+
+batch内256条数据可能包含多个不同item。对每个item，用其属性特征生成embedding，然后与对应的用户embedding拼接，输入DNN预测CTR。batch训练提高效率，每个样本独立计算loss后平均。
+
+\subsubsection{Q20: 新item信息不确定怎么办}
+
+\textbf{回答要点：}
+
+Multi-hot特征支持变长输入。Title和genres都padding到固定长度（5个slot），不足补0。生成器对padding位置的embedding权重会自动学习为接近0，不影响最终表示。
+
+\subsection{理论理解问题}
+
+\subsubsection{Q21: MAML和本项目的区别}
+
+\textbf{回答要点：}
+
+标准MAML学习模型参数的初始化，使其能快速适应新任务。本项目学习embedding生成器，使其输出的embedding易于快速适应。本质都是meta-learning，但优化对象不同。
+
+\subsubsection{Q22: 为什么除以20而不是21}
+
+\textbf{回答要点：}
+
+设计选择，给用户信息更高权重（95\%）。如果除以21，相当于用户和item初始embedding权重相同。除以20是一种残差连接思想，保留更多用户协同信号。
+
+\subsubsection{Q23: Scaling Law对推荐系统的影响}
+
+\textbf{回答要点：}
+
+模型性能与数据量、参数量呈幂律关系。推荐系统中冷启动问题更严重，因为新item数据量极少，无法充分利用大模型能力。元学习通过迁移老item知识，缓解数据稀缺问题。
+
+\subsubsection{Q24: 为什么用历史用户去噪}
+
+\textbf{回答要点：}
+
+新item的初始embedding由属性生成，可能不准确。历史交互用户的embedding包含真实的协同过滤信号。通过平均多个用户embedding，可以降低单个用户的噪声，得到更稳定的item表示。
+
+\subsubsection{Q25: 预测时没有梯度下降机会怎么办}
+
+\textbf{回答要点：}
+
+支持两种模式。Zero-shot直接用生成器输出预测，适合完全新item。Few-shot收集少量交互（10-50条）作为支持集，做一次梯度下降后预测，效果更好但需要等待数据积累。
+
+\section{总结}
+
+本项目基于MovieLens-1M数据集，实现了基于元学习的推荐系统冷启动方案。核心创新点：
+
+\begin{enumerate}
+    \item 用属性特征生成初始embedding，解决新item无历史数据问题
+    \item 元学习训练生成器，使embedding易于快速适应
+    \item 历史用户embedding去噪，提升冷启动效果
+    \item 支持zero-shot和few-shot两种预测模式
+\end{enumerate}
+
+技术栈：Python + PyTorch，训练时间3-5分钟（GPU），适合工业落地。
+
+\end{document}
+
