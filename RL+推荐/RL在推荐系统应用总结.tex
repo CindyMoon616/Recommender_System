@@ -20,122 +20,262 @@
 
 \begin{document}
 \maketitle
+\section{强化学习应用于推荐系统的主要范式总结}
 
-\paragraph{Executive Summary}
-强化学习应用到推荐系统的核心价值，是把``一次打分''扩展为``多步决策''：系统不只优化当前点击，而是优化会话质量、转化、停留、复访、留存等长期价值。近十年方法演进大致经历了：上下文 Bandit 处理在线探索；MDP/深度 RL 处理多步反馈；Slate/List-level RL 处理列表依赖；Model-based 与 Offline RL 处理样本效率和上线安全；IRL/偏好学习处理 reward 难设计；Multi-agent、Hierarchical 与 Imitation 则分别解决多模块协同、超大动作空间与弱监督序列生成。工程上并不存在``一招鲜''：工业系统更常见的是混合范式，即用 Bandit 做安全探索、用离线 RL 或 world model 学长期策略、用 Actor-Critic 或 Seq2Slate 做列表生成、再用约束/守护指标控制上线风险。
+强化学习应用于推荐系统的核心价值，并不是简单地用 RL 替代传统排序模型，
+而是将推荐过程从``单次打分问题''扩展为``序列决策问题''。
+传统推荐模型通常优化当前曝光下的点击率、转化率或观看时长，
+而强化学习更关注当前推荐行为对后续用户状态、会话深度、复访、留存和长期收益的影响。
+因此，在推荐系统中引入强化学习，本质上是希望解决探索--利用平衡、长期价值估计、
+列表级优化、离线日志学习、奖励难定义以及多模块协同等问题。
 
-\section{问题建模与范式总览}
-推荐系统中的 RL 通常把用户状态记为 $s_t$（画像、上下文、历史序列、会话阶段），动作记为 $a_t$（单物料、候选集合、整页/整列、频道或多模块决策），奖励记为 $r_t$（点击、观看时长、加入购物车、转化、会话深度、复访、留存或其组合），目标是最大化折扣回报 $\mathbb{E}\sum_t \gamma^t r_t$。与监督式推荐不同，RL 的关键不在于更强的打分器，而在于：其一，允许把推荐视为\emph{交互闭环}；其二，允许显式建模探索--利用、短期--长期、多目标约束与列表级 credit assignment。
+从工程和研究范式上看，强化学习在推荐系统中的应用可以整合为六类：
+基于 Bandit 的在线探索、基于 MDP 的长期策略学习、基于 Slate/List 的列表级优化、
+基于离线与模型化的安全学习、基于偏好/奖励学习的目标建模、
+以及基于系统级协同的多模块决策。下面分别进行说明。
 
-\paragraph{应用方式总览}
-从工程视角，RL 在推荐中的主要落地方式可概括为九类：\textbf{基于 Bandit 的在线学习}、\textbf{基于 MDP 的策略学习（policy gradient、Q-learning、actor-critic）}、\textbf{基于 slate/list-level RL}、\textbf{基于模型的 RL（model-based）}、\textbf{基于逆强化学习/奖励学习}、\textbf{基于离线 RL 与反事实评估}、\textbf{基于多智能体/对抗式 RL}、\textbf{基于层次 RL/选项框架}、以及\textbf{基于模仿学习/序列生成（Seq2Slate 等）}。这些范式并非互斥，而是沿着``动作空间大小、是否需要在线探索、reward 是否容易定义、是否要优化整页/整链路''四条轴线组合出现。
+\subsection{基于 Bandit 的在线探索范式}
 
-\section{在线与模型无关方法}
-\paragraph{范式一：基于 Bandit 的在线学习}
-核心思想是把推荐看作\emph{单步决策}，在每次曝光时进行探索与利用折中；典型算法包括 $\epsilon$-greedy、UCB、LinUCB、Thompson Sampling 与神经 contextual bandit。它最适合冷启动、召回层探索、样本到达快而反馈近实时的场景。优点是上线链路短、在线可解释性强、A/B 容易；缺点是通常只看即时奖励，难处理跨会话长期价值、列表依赖和 delayed reward；工程难点在于 propensity 记录、探索预算控制、冷启动安全和高方差 OPE。
+基于 Bandit 的推荐方法将推荐看作单步决策问题。
+在每一次用户访问时，系统根据当前用户上下文选择一个物品或一个候选动作，
+并根据用户是否点击、是否转化等即时反馈更新策略。
+其核心问题是如何在已知高收益物品和未知潜力物品之间进行探索--利用平衡。
 
-代表工作中，\emph{A Contextual-Bandit Approach to Personalized News Article Recommendation}（Li et al., 2010）是工业推荐中 contextual bandit 的里程碑：状态是用户与文章上下文特征，动作为待展示新闻，奖励为点击，在线采用 LinUCB，在 Yahoo! Front Page today module 上验证了 contextual exploration 的有效性。\emph{Unbiased Offline Evaluation of Contextual-Bandit-based News Article Recommendation Algorithms}（Li et al., 2011）进一步给出 replay/offline replay 评估，为日志驱动的反事实评估奠定基础。更近期的 \emph{Deep Exploration for Recommendation Systems}（Zhu \& Van Roy, 2021/2023）把推荐从单步 bandit 推向``探测式''多步探索，强调 delayed feedback 与 sparse reward 下的 probing；\emph{Epinet for Content Cold Start}（Jeon et al., 2024）则把近似 Thompson Sampling 扩展到复杂神经网络，并在 Facebook Reels 冷启动 retrieval 场景做了线上验证。实践上，Bandit 最常被放在\emph{召回和探索桶}，而不是直接替代精排策略。
+该范式适用于反馈较快、决策链路较短的场景，例如新闻推荐、冷启动探索、
+召回层探索以及新内容分发。与完整的 MDP 强化学习相比，
+Bandit 不显式建模长期状态转移，因此算法更轻量、上线风险更低，
+但也较难处理跨会话长期价值和复杂的列表依赖关系。
 
-\paragraph{范式二：基于 MDP 的策略学习（policy gradient、Q-learning、actor-critic）}
-该类方法把推荐视为多步决策过程，显式优化长期回报。典型算法包括 REINFORCE、DQN/Double DQN、DDPG/TD3、A2C/A3C、SAC 及其离线变体。适用场景是 feed、短视频、音频流、会话电商等，用户反馈会改变随后的状态分布。优点是能处理长期目标；缺点是样本效率较低、对状态建模敏感、容易受离线分布偏移影响；工程难点在于超大离散动作空间、负反馈稀疏、价值高估和安全探索。
+代表性工作是 Li et al. 的
+\textit{A Contextual-Bandit Approach to Personalized News Article Recommendation}。
+该工作将新闻推荐建模为 contextual bandit 问题，
+其中状态为用户上下文和新闻特征，动作为待展示新闻，奖励为用户点击。
+算法采用 LinUCB 方法，根据上下文估计每篇新闻的上置信界分数，
+从而在点击率最大化和新文章探索之间取得平衡。
+该工作的重要意义在于，它证明了在线探索机制可以在真实新闻推荐系统中有效提升推荐效果，
+也奠定了后续工业推荐中探索桶、冷启动流量和在线学习机制的基础。
 
-在 policy gradient 路线中，\emph{Top-K Off-Policy Correction for a REINFORCE Recommender System}（Chen et al., 2019）展示了 YouTube 生产环境中如何把 REINFORCE 用于 top-$K$ 推荐，状态是用户历史与上下文，动作是 top-$K$ 候选生成/选择，训练上使用 off-policy correction 与 top-$K$ correction，说明 PG 可在超大候选空间中落地。Q-learning 路线中，\emph{Reinforcement Learning to Optimize Long-term User Engagement in Recommender Systems}（Zou et al., 2019, FeedRec）以 hierarchical LSTM 建 Q-network，并引入 S-network 作为环境辅助网络，强调长短期混合反馈与 off-policy 稳定性。Actor-Critic 路线中，\emph{Off-Policy Actor-Critic for Recommender Systems}（Chen et al., 2022）面向生产系统总结了 critic 设计、分布偏移缓解、离线到在线迁移；\emph{Two-Stage Constrained Actor-Critic for Short Video Recommendation}（Cai et al., 2023）则把短视频推荐建模为 CMDP：主目标是 watch-time/长期收益，约束是 like/share/follow 等辅助行为，展示了 RL 在\emph{多目标约束优化}中的工业价值。学术侧还有 \emph{Self-Supervised Reinforcement Learning for Recommender Systems}（Xin et al., 2020）与 \emph{Supervised Advantage Actor-Critic for Recommender Systems}（Xin et al., 2022），其贡献在于把 supervised sequential learning 与 RL head 结合，缓解纯离线 RL 的稀疏奖励与负样本缺失问题。
+\subsection{基于 MDP 的长期策略学习范式}
 
-\section{列表生成与模型化方法}
-\paragraph{范式三：基于 slate/list-level RL}
-该范式直接把一个列表、一页、甚至带布局的页面看作动作，优化 top-$K$ 依赖、多样性、互补性与位置偏置。典型方法包括 list-wise actor-critic、SlateQ、latent-slate RL、page-wise RL。它适合精排/重排、全页生成、feed 卡片编排等场景。优点是目标与业务展示单元一致；缺点是组合动作空间爆炸、credit assignment 困难；工程挑战集中在 slate 表示、用户选择模型假设、离线训练的 combinatorial generalization 以及线上 latency。
+基于 MDP 的方法将推荐过程建模为多步决策问题。
+在该框架下，用户状态 $s_t$ 会随着推荐结果和用户反馈不断变化，
+系统在每个时刻选择动作 $a_t$，获得即时奖励 $r_t$，
+并转移到下一状态 $s_{t+1}$。其优化目标是最大化长期折扣回报：
+\[
+J(\pi)
+=
+\mathrm{E}_{\pi}
+\left[
+\sum_{t=0}^{T}\gamma^t r_t
+\right].
+\]
+其中 $\gamma$ 为折扣因子，表示未来收益的重要程度。
 
-\emph{Deep Reinforcement Learning for Page-wise Recommendations}（Zhao et al., 2018, DeepPage）把状态定义为用户实时反馈与历史，动作为带 2-D 展示结构的一整页，强调``选什么''与``怎么摆''的联合优化。\emph{Seq2Slate: Re-ranking and Slate Optimization with RNNs}（Bello et al., 2018）采用序列生成/pointer network 逐步选择列表元素，用 click log 的弱监督端到端学习 intra-slate dependencies；从方法论上看，它既属于 list-level RL，也属于\emph{序列生成式推荐}。\emph{Reinforcement Learning for Slate-based Recommender Systems: A Tractable Decomposition and Practical Methodology}（Ie et al., 2019, SlateQ）在温和选择假设下，把 slate 的长期价值分解成 item-wise LTV，并在 YouTube live experiments 验证了可扩展性，是工业 slate RL 的代表。面向更一般的整列表建模，\emph{Generative Slate Recommendation with Reinforcement Learning}（Deffayet et al., 2023, GeMS）先用 VAE 学习 slate latent action，再在连续潜空间做 RL，从而减少对 SlateQ 分解假设的依赖；作者公开了代码（\url{https://github.com/naver/gems}）。
+该范式适合短视频、信息流、音乐、电商会话推荐等连续交互场景。
+在这些场景中，当前推荐不仅影响当前点击或观看时长，
+还会改变用户接下来继续浏览、退出、购买或复访的概率。
+因此，相比只优化即时点击率的监督学习模型，MDP 强化学习更适合建模长期用户价值。
 
-\paragraph{范式四：基于模型的 RL（Model-based）}
-Model-based RL 通过学习用户环境模型、reward model 或 world model，让智能体先在模拟器中交互，再低风险迁移到线上。适用场景是在线探索代价高、真实奖励延迟长、需要 replay/counterfactual 验证的系统。优点是样本效率高、可做 stress test 与 safe pre-training；缺点是 world model 偏差会被策略放大（model exploitation）；工程难点在于 simulator fidelity、uncertainty estimation、sim-to-real gap 与 reward calibration。
+代表性工作是 Chen et al. 的
+\textit{Top-K Off-Policy Correction for a REINFORCE Recommender System}。
+该工作来自 YouTube 推荐场景，使用 policy gradient 方法优化 top-$K$ 推荐。
+由于真实系统中的训练数据来自旧策略，而当前策略不断变化，
+直接使用离线日志训练会产生 off-policy 偏差。
+因此，该工作提出 top-$K$ off-policy correction，
+对日志策略和目标策略之间的分布差异进行修正。
+其核心意义在于，它展示了 policy gradient 类方法如何在超大规模工业推荐系统中落地，
+并说明强化学习可以直接服务于长期用户参与度优化，而不仅仅是离线模拟实验。
 
-\emph{Generative Adversarial User Model for Reinforcement Learning Based Recommendation System}（Chen et al., 2019, GAUM）用 GAN 学习用户行为动态与奖励，再配合 cascading DQN 做组合推荐，说明 user model 可作为可重复交互的环境近似。\emph{Model-Based Reinforcement Learning with Adversarial Training for Online Recommendation}（Bai et al., 2019, IRecGAN）进一步把生成器、判别器与策略学习耦合起来，用 adversarial training 校正生成轨迹和奖励偏差。\emph{Whole-Chain Recommendations}（Zhao et al., 2020, DeepChain）把多场景推荐链路建成多智能体+model-based 框架：不同场景 agent 共享用户记忆，联合最大化整条链路收益，适合首页--详情页--二跳链路这种``全链路优化''。而 \emph{Sim-to-Real Interactive Recommendation via Off-Dynamics Reinforcement Learning}（Wu et al., 2021）与其扩展版 DACIR（2022）关注现实中的 simulator mismatch，提出 dynamics adaptation 和 representation adaptation，把 world model 从``能跑''推进到``可迁移''。
+\subsection{基于 Slate/List 的列表级优化范式}
 
-\paragraph{范式五：基于逆强化学习/奖励学习}
-在很多推荐任务里，真正想优化的是满意度、复访、长期留存或体验公平，但这些目标很难手工写成准确 reward，因此可以反过来从偏好、演示或行为轨迹中学习 reward。优点是减轻 reward engineering；缺点是需要额外的人类偏好或优质轨迹，且 reward model 本身可能偏；工程难点在于偏好采样成本、reward drift、噪声演示与离线偏差放大。
+在真实推荐系统中，系统通常不是一次只推荐一个物品，
+而是展示一个由多个物品组成的推荐列表或页面。
+如果候选物品集合为 $\mathcal{I}$，每次推荐 $k$ 个物品，
+则动作空间规模为
+\[
+\binom{|\mathcal{I}|}{k}.
+\]
+因此，直接把整个列表作为动作进行 Q-learning 几乎不可行。
+Slate/List-level RL 的核心目标，就是在组合动作空间下优化整个推荐列表的长期价值。
 
-\emph{Generative Inverse Deep Reinforcement Learning for Online Recommendation}（Chen et al., 2020/2021, InvRec）是推荐领域较早的 rec-specific IRL 工作，核心是从用户行为轨迹中自动恢复 reward，而不是手工拼接点击/停留等代理指标；实验使用 VirtualTB 在线环境。\emph{PrefRec: Recommender Systems with Human Preferences for Reinforcing Long-term User Engagement}（Xue et al., 2023）把奖励学习推进到 preference-based recommendation：用用户历史或 crowdsourcing 得到的 pairwise preference 训练 reward model，再用 expectile regression 与额外 value function 学策略，很适合``长期目标难定义、但人能比较两段体验谁更好''的场景。\emph{Adversarial Batch Inverse Reinforcement Learning: Learn to Reward from Imperfect Demonstration for Interactive Recommendation}（Liu et al., 2023）进一步考虑 demonstration 不完美和 coverage 不充分的问题，引入 pessimism、stationary distribution correction 与 KL 约束。最后，\emph{Reinforcement Learning-based Recommender Systems with Large Language Models for State Reward and Action Modeling}（Wang et al., 2024）展示了另一条前沿路线：把 LLM 当作环境或语义先验，用于状态摘要、reward shaping 和 action semantic modeling，本质上也是\emph{神经奖励/环境建模}。
+该范式适用于精排、重排、整页推荐、feed 流排序和页面布局优化等任务。
+它关注的不只是单个物品的得分，还包括物品之间的竞争关系、互补关系、位置影响和用户选择行为。
 
-\section{离线学习、反事实评估与扩展范式}
-\paragraph{范式六：基于离线 RL 与反事实评估}
-离线 RL 直接从日志数据学习策略，是工业推荐最现实的训练范式之一。它最适合探索受限、用户体验敏感、系统已有大量历史曝光日志的场景。优点是安全、成本低、能利用海量旧数据；缺点是 OOD action value 估计困难；工程难点在于 logging policy 不可得、support 不足、奖励稀疏和 OPE 高方差。
+代表性工作是 Ie et al. 的
+\textit{Reinforcement Learning for Slate-based Recommender Systems: A Tractable Decomposition and Practical Methodology}，
+即 SlateQ。
+SlateQ 的核心思想是：不直接学习整个推荐列表的价值 $Q(s,A)$，
+而是通过用户选择模型将列表价值分解为物品级长期价值的加权和：
+\[
+Q(s,A)
+=
+\sum_{i\in A}
+P(i\mid s,A)Q(s,i).
+\]
+其中，$P(i\mid s,A)$ 表示用户在状态 $s$ 下看到列表 $A$ 后选择物品 $i$ 的概率，
+$Q(s,i)$ 表示用户真正消费物品 $i$ 后带来的长期价值。
 
-\emph{A General Offline Reinforcement Learning Framework for Interactive Recommendation}（Xiao \& Wang, 2021）是推荐离线 RL 的代表工作，提出 support constraints、supervised regularization、policy constraints、dual constraints 和 reward extrapolation，以缓解行为策略与目标策略的分布偏移。\emph{Text-Based Interactive Recommendation via Offline Reinforcement Learning}（Zhang et al., 2022）结合 conservative Q-function 与 behavior-agnostic off-policy correction，面向多未知行为策略来源的日志，是对交互推荐/OPE 设计的有价值补充。\emph{Offline Evaluation for Reinforcement Learning-based Recommendation: A Critical Issue and Some Alternatives}（Deffayet et al., 2023）指出``next-item prediction 式离线评估''并不能真正检验 RL 推荐器的长期优势，提醒工程上不能用普通序列推荐协议替代 RL evaluation。最新的 \emph{ROLeR: Effective Reward Shaping in Offline Reinforcement Learning for Recommender Systems}（Zhang et al., 2024）把重点放在 reward shaping 与 uncertainty penalty 上，公开了代码（\url{https://github.com/ArronDZhang/ROLeR}），是当前 model-based offline RL for RecSys 的代表之一。配套资源方面，\emph{RL4RS}（Wang et al., 2023）提供真实数据、模拟环境与 counterfactual policy evaluation 算法，\emph{EasyRL4Rec}（Yu et al., 2024）则提供统一训练/评估框架和五个数据环境，适合作为工业前的实验基座。
+在 MNL 用户选择模型下，有
+\[
+P(i\mid s,A)
+=
+\frac{v(s,i)}
+{v(s,\bot)+\sum_{j\in A}v(s,j)}.
+\]
+因此列表价值可以写成
+\[
+Q(s,A)
+=
+\frac{
+\sum_{i\in A}v(s,i)Q(s,i)
+}{
+v(s,\bot)+\sum_{j\in A}v(s,j)
+}.
+\]
+该公式说明，SlateQ 不是简单选择 $Q(s,i)$ 最大的 $k$ 个物品，
+也不是简单选择 $v(s,i)Q(s,i)$ 最大的 $k$ 个物品，
+而是优化整个列表在用户选择模型下的期望长期价值。
+SlateQ 的意义在于，它为大规模 slate recommendation 提供了一种可分解、可训练、可部署的强化学习框架。
 
-\paragraph{范式七：基于多智能体/对抗式 RL}
-当推荐由多个模块、多个场景、多个业务 agent 协同完成时，单 agent RL 往往无法表达真实系统；这时可以把场景、模块、频道或多个利益相关方视为协作/竞争智能体。优点是贴合系统结构；缺点是非平稳性更强、训练更难；工程挑战在于 credit assignment、通信约束、集中训练分散执行（CTDE）以及多目标协调。
+\subsection{基于离线与模型化的安全学习范式}
 
-\emph{Learning to Collaborate: Multi-Scenario Ranking via Multi-Agent Reinforcement Learning}（Feng et al., 2018）把多场景排序建模成 fully cooperative partially observable MARL，通过 centralized critic 与消息通信提升整体链路收益。\emph{Learning to Collaborate in Multi-Module Recommendation via Multi-Agent Reinforcement Learning without Communication}（He et al., 2020）面向电商页面多个独立模块无法直接通信的现实，设计 signal network 实现弱耦合协作。\emph{Whole-Chain Recommendations}（Zhao et al., 2020）可视为 MARL 在连续推荐链路上的工业化变体。对话推荐中的 \emph{CRSAL: Conversational Recommender Systems with Adversarial Learning}（Ren et al., 2020）则把 adversarial learning 融入 Actor-Critic，以提高对话动作生成质量，代表了\emph{对抗式 RL}在推荐中的一条支线。
+推荐系统中的在线探索成本很高。
+如果一个新策略表现不好，可能直接损害用户体验、平台收益和内容生态。
+因此，工业推荐中更常见的做法是先利用历史日志进行离线强化学习，
+或者学习一个用户环境模型，在模拟环境中训练策略，再进行小流量上线验证。
 
-\paragraph{范式八：基于层次 RL/选项框架}
-层次 RL 通过高层策略做粗粒度规划、低层策略做细粒度决策，缓解超大动作空间、长时延回报和稀疏反馈问题。它适合综合推荐、频道--物料两级决策、category-to-item 生成及多时间尺度目标。优点是更可扩展、可解释；缺点是层级设计本身较难，若上层目标错误会系统性误导下层。
+离线 RL 的核心问题是分布偏移。
+历史日志只覆盖了旧策略曾经选择过的动作，
+而新策略可能会选择日志中很少出现甚至没有出现过的动作。
+如果模型对这些 out-of-distribution 动作过度乐观，
+就会导致严重的价值高估。
+因此，离线推荐 RL 通常需要保守价值估计、行为策略正则、反事实评估和安全约束。
 
-\emph{Hierarchical Reinforcement Learning for Integrated Recommendation}（Xie et al., 2021, HRL-Rec）是代表性工作：高层为频道/源选择，低层为子频道内 item 推荐，适合 heterogeneous item sources 的 integrated recommendation，代码公开（\url{https://github.com/modriczhang/HRL-Rec}）。\emph{Hierarchical Reinforcement Learning for Modeling User Novelty-Seeking Intent in Recommendation}（Li et al., 2023）用层次 RL 建模 novelty-seeking，使多样性/新颖性进入长期决策回路。\emph{Hierarchical Reinforcement Learning for Temporal User Adaptation in List-wise Recommendation}（Ji et al., 2024/2025, mccHRL）则从时间抽象角度处理 list-wise recommendation 中长期感知与短期兴趣变化的冲突。更偏选项（options）框架的 \emph{Personalised Multi-modal Interactive Recommendation with Hierarchical Reinforcement Learning}（Wu et al., 2024, PMMIR）把个性化多模态交互拆成顺序子任务，体现了 options 在交互推荐中的实用性。
+代表性工作可以选 Zhang et al. 的
+\textit{ROLeR: Effective Reward Shaping in Offline Reinforcement Learning for Recommender Systems}。
+该工作关注离线推荐强化学习中的 reward shaping 问题。
+在推荐日志中，用户反馈往往稀疏、延迟且噪声较大，
+直接使用点击或购买作为奖励容易导致训练信号不足。
+ROLeR 通过奖励塑形和不确定性惩罚，使离线 RL 在学习长期价值时更加稳定，
+并降低策略对日志分布外动作的过度估计。
+这一类方法的价值在于，它更符合真实工业推荐系统的训练条件：
+先在日志数据和模拟环境中学习，再通过严格的离线评估和小流量实验上线。
 
-\paragraph{范式九：基于模仿学习/序列生成（Seq2Slate 等）}
-当日志足够丰富而在线探索昂贵时，直接模仿``专家用户''或``优质策略''，常比从零开始 RL 更稳健。优点是样本效率高、训练稳定；缺点是容易复制历史偏差、难超越 demonstration；工程挑战在于 covariate shift、专家选择偏差与与 RL 微调衔接。
+\subsection{基于偏好/奖励学习的目标建模范式}
 
-\emph{Energy-Based Sequence GANs for Recommendation and Their Connection to Imitation Learning}（Yoo et al., 2017）较早指出推荐中的生成式序列学习与 MaxEnt imitation learning 的联系。前文介绍的 \emph{Seq2Slate}（Bello et al., 2018）也可归入``弱监督序列生成+策略学习''范式：它不直接优化手工 reward，而是用点击日志近似地学习``专家式''排列。前沿工作 \emph{Stratified Expert Cloning for Retention-Aware Recommendation at Scale}（Lin et al., 2025, SEC）直接从高留存用户中构造 expert strata，用 hierarchical behavior cloning 优化 retention，并完成大规模 A/B；它提醒我们，在长期价值场景中，\emph{高质量 demonstration 本身可能比手工 reward 更可靠}。因此工业实践常用 ``BC/Seq2Slate 预训练 + Offline RL/Preference RL 微调'' 的两阶段方案。
+推荐系统中的 reward 往往很难手工定义。
+点击率高不一定代表用户满意，观看时长高也可能来自低质量沉迷内容，
+短期转化提升也可能损害长期留存。
+因此，当真实目标难以直接写成一个可靠的奖励函数时，
+可以通过偏好学习、逆强化学习或奖励模型来学习 reward。
 
-\section{范式比较}
+该范式适合优化用户满意度、长期留存、内容质量、体验偏好等难以用单一指标刻画的目标。
+其核心思想是：不要完全依赖人工设计的点击/时长加权公式，
+而是从用户偏好、专家演示或成对比较中学习奖励函数，
+再用强化学习优化该奖励。
+
+代表性工作是 Xue et al. 的
+\textit{PrefRec: Recommender Systems with Human Preferences for Reinforcing Long-term User Engagement}。
+PrefRec 使用用户偏好信号训练 reward model，
+再基于该 reward model 学习能够提升长期用户参与度的推荐策略。
+相比直接把点击、时长、点赞等信号线性加权，
+偏好学习能够更自然地表达``用户更喜欢哪种推荐体验''。
+该类方法与大模型后训练中的 RLHF 思想非常接近：
+先学习一个能反映人类偏好的奖励模型，
+再用强化学习优化策略。
+在推荐系统中，它尤其适合处理长期体验、满意度和留存这类难以直接定义的目标。
+
+\subsection{基于系统级协同的多模块决策范式}
+
+真实推荐系统往往不是一个单一模型完成所有决策，
+而是由召回、粗排、精排、重排、广告、内容安全、多频道分发等多个模块共同组成。
+不同模块之间既有协同，也可能存在目标冲突。
+因此，可以将推荐系统建模为多智能体或层次强化学习问题：
+高层策略决定频道、场景或推荐意图，
+低层策略负责具体物品选择；
+不同模块或不同场景则可以被看作多个智能体，共同优化全局收益。
+
+该范式适合多场景推荐、多模块页面、全链路推荐和频道--物品两级决策。
+其优点是更贴近工业系统结构，能够从系统层面优化整体收益；
+缺点是训练复杂度更高，credit assignment 更困难。
+
+代表性工作是 Zhao et al. 的
+\textit{Whole-Chain Recommendations}。
+该工作将推荐系统中的多个连续场景建模为一个完整推荐链路，
+不同场景或模块可以看作协同决策单元，
+共同影响用户在整条链路中的行为。
+例如，用户从首页进入详情页，再到相关推荐或购买页面，
+每一步推荐都会影响后续状态和最终收益。
+Whole-Chain Recommendation 的意义在于，它不再只优化单个页面或单个推荐位，
+而是从全链路角度优化用户长期价值。
+这类方法体现了强化学习在推荐系统中的更高层次应用：
+从单点排序优化，走向跨模块、跨场景、跨时间的系统级决策优化。
+
+\subsection{范式对比总结}
+
 \begin{table}[htbp]
 \centering
 \small
-\caption{各范式的工程比较}
-\resizebox{\linewidth}{!}{
-\begin{tabular}{p{2.1cm}p{1.1cm}p{1.2cm}p{1.2cm}p{1.2cm}p{1.2cm}p{1.6cm}p{1.5cm}p{3.5cm}}
-\toprule
-范式 & 动作空间规模 & 列表级优化 & 样本效率 & 适合离线训练 & 是否需在线探索 & reward 设计难度 & 工程复杂度 & 典型应用场景 \\
-\midrule
-Bandit 在线学习 & 中 & 弱 & 高 & 中 & 必需但可控 & 低--中 & 低 & 冷启动、召回探索、新闻/短内容单步推荐 \\
-MDP 策略学习 & 大 & 中 & 中--低 & 中 & 通常需要或需强 OPE & 中--高 & 中--高 & Feed、短视频、音频流、多步会话推荐 \\
-Slate/List-level RL & 极大 & 强 & 低 & 中 & 通常需要模拟器/离线预训 & 高 & 高 & 精排重排、整页生成、布局优化 \\
-Model-based RL & 大 & 强 & 高 & 强 & 可极少上线探索 & 高（需环境/奖励模型） & 高 & 探索昂贵、需要仿真验证、全链路优化 \\
-IRL/奖励学习 & 大 & 中--强 & 中 & 强 & 可选 & 显式设计低，但偏好采集高 & 高 & 满意度/留存等难定义目标，人工偏好可得 \\
-Offline RL + OPE & 大 & 中--强 & 中 & 最强 & 尽量少 & 中--高 & 高 & 真实工业日志学习、安全预训练、上线前评估 \\
-多智能体/对抗式 RL & 大 & 中--强 & 中--低 & 中 & 常需安全探索 & 高 & 很高 & 多模块页面、多场景链路、对话推荐协同 \\
-层次 RL/选项框架 & 很大 & 强 & 中 & 中--强 & 可少量 & 中--高 & 高 & 频道--物料两级决策、语义到物料 coarse-to-fine \\
-模仿学习/序列生成 & 大 & 强 & 高 & 强 & 可不需要 & 低--中 & 中 & 日志充足、探索昂贵、序列重排/列表生成 \\
-\bottomrule
-\end{tabular}}
+\caption{强化学习推荐系统主要范式对比}
+\begin{tabular}{p{2.6cm}p{3.3cm}p{3.3cm}p{3.5cm}}
+\hline
+范式 & 主要解决问题 & 代表论文 & 适用场景 \\
+\hline
+Bandit 在线探索 &
+探索--利用平衡，冷启动与新内容探索 &
+Li et al., 2010, Contextual Bandit for News Recommendation &
+新闻推荐、召回探索、冷启动流量 \\
+\hline
+MDP 长期策略学习 &
+优化多步交互下的长期回报 &
+Chen et al., 2019, Top-K Off-Policy Correction for REINFORCE &
+短视频、信息流、会话推荐 \\
+\hline
+Slate/List 列表级优化 &
+解决推荐列表组合动作空间和列表依赖 &
+Ie et al., 2019, SlateQ &
+精排、重排、整页推荐 \\
+\hline
+离线与模型化 RL &
+降低在线探索风险，从日志或模拟器中学习 &
+Zhang et al., 2024, ROLeR &
+离线日志丰富、上线风险高的工业推荐 \\
+\hline
+偏好/奖励学习 &
+解决 reward 难以手工定义的问题 &
+Xue et al., 2023, PrefRec &
+满意度、留存、长期体验优化 \\
+\hline
+系统级协同决策 &
+优化多模块、多场景、全链路推荐收益 &
+Zhao et al., 2020, Whole-Chain Recommendations &
+多频道、多页面、多模块推荐系统 \\
+\hline
+\end{tabular}
 \end{table}
 
-\section{方法演进时间线}
-\begin{verbatim}
-timeline
-    title 强化学习在推荐系统中的重要里程碑
-    2010 : LinUCB / Contextual Bandit for Yahoo News
-    2011 : Replay-based Unbiased Offline Evaluation
-    2018 : DeepPage / TPGR / REINFORCE@YouTube
-    2018 : Seq2Slate (sequence generation for slate)
-    2019 : FeedRec / GAUM / IRecGAN / SlateQ
-    2020 : Whole-Chain / MARL for modules & scenarios / InvRec
-    2021 : HRL-Rec / General Offline RL for Interactive Recommendation
-    2022 : Off-Policy Actor-Critic / SA2C / Text-based Offline RL / CMDP for short video
-    2023 : PrefRec / Generative Slate RL / Critical Offline Evaluation
-    2024 : ROLeR / EasyRL4Rec / LLM as environment for state-reward-action modeling
-    2025 : SEC / HSRL / 更强的 retention-oriented imitation & semantic hierarchical RL
-\end{verbatim}
+\subsection{结论}
 
-\section{工程实践建议}
-\paragraph{Reward 设计}
-推荐系统中的 reward 应从业务目标树出发，而不是从单一点击率出发。可行做法是把目标分成三层：第一层是\emph{原子信号}（click、watch-time、like、share、purchase、return）；第二层是\emph{业务代理目标}（会话深度、GMV、复访、留存、创作者生态、满意度）；第三层是\emph{守护约束}（退订率、跳失率、投诉率、时延、资源成本、公平性）。常见实现包括线性加权、分段折扣、延迟归因、约束 MDP、双 critic 或多 critic。若 reward 难以写准，应优先考虑 preference/reward model；若只关心安全探索，则 reward 尽量保持简单、稳定、可解释。一个经验法则是：\emph{把不可逆伤害放入约束，把可权衡收益放入主目标}。
+综上，强化学习应用于推荐系统可以概括为六种主要范式。
+如果问题重点是新物品探索和冷启动，通常优先使用 Bandit；
+如果问题重点是用户长期价值，则需要基于 MDP 的策略学习；
+如果问题重点是整页或列表效果，则需要 Slate/List-level RL；
+如果在线探索风险较高，则更适合离线 RL 或模型化 RL；
+如果业务目标难以写成明确 reward，则可以引入偏好学习或奖励学习；
+如果系统由多个场景和模块构成，则需要多智能体或层次化的系统级决策方法。
 
-\paragraph{离线评估与反事实校准}
-离线评估不能只看 next-item HR/NDCG。对于 RL 推荐，应同时做四类检查：第一，时间切分与 logging policy 完整性检查，确保没有数据/特征穿越；第二，\emph{counterfactual evaluation}，优先使用 replay（bandit）、IPS/SNIPS/DR、长期 OPE 和分群后的 OPE；第三，环境回放或 world model stress test，检验策略是否利用了 simulator bug；第四，策略行为分析，包括推荐分布是否塌陷、cover rate、多样性、新老物料曝光占比、对各人群是否存在异常漂移。离线指标最好同时报告即时与长期，如 CTR、CVR、watch-time、session return、retention proxy 与 guardrail。
+因此，强化学习在推荐系统中的作用并不是简单替代 CTR/CVR 排序模型，
+而是为推荐系统提供一种长期、交互式、可约束的决策框架。
+传统监督学习更擅长回答``当前用户最可能点击什么''，
+而强化学习更擅长回答``当前推荐会如何影响用户未来行为和系统长期收益''。
+在真实工业系统中，最常见的做法也不是单独使用某一种 RL 算法，
+而是将多种范式组合起来：
+用 Bandit 做安全探索，用离线 RL 学习长期价值，
+用 SlateQ 或序列生成方法做列表级优化，
+用偏好/奖励模型对齐长期体验，
+再通过系统级协同方法优化多模块推荐链路。
+这也是强化学习推荐系统区别于传统排序推荐的核心所在。
 
-\paragraph{安全上线（guardrail）}
-推荐 RL 最忌讳``直接全量替换''。建议采用``\textbf{behavior-regularized pretraining $\rightarrow$ 小流量 canary $\rightarrow$ 分群放量}''路径。策略侧可加 KL/BC 正则、action mask、candidate filter、uncertainty penalty、safe fallback；实验侧要提前设定 hard guardrails，如投诉率、跳失率、停留时长底线、内容风险比例、系统时延和成本上界。对可能影响生态分配的场景，应同步监控 item-side fairness、创作者分发集中度和新内容冷启动损失。若存在明显非平稳性（节假日、热点事件、算法切换），应保持旧策略 shadow run，并支持实时回切。
-
-\paragraph{分群/分流策略}
-RL 很少在全量用户上均匀生效。常见分群维度包括新老用户、活跃度、冷/热物料、内容垂类、流量入口、终端网络条件、价格敏感度和用户生命周期阶段。工程上常见做法是：冷启动与探索桶用 bandit，新用户用 imitation/behavior-regularized policy，老用户高价值群体用长期价值 RL，整页重排用 Slate/Seq2Slate，跨模块或跨场景用 MARL/HRL。分流时则采用``高置信低风险群体先放量，易受损高价值群体后放量''的原则。
-
-\paragraph{范式选择与混合策略}
-若目标主要是\emph{单步点击提升}，优先 Bandit；若目标是\emph{会话级长期收益}，优先 MDP/Actor-Critic；若目标是\emph{整页或整列表质量}，优先 Slate/List-level 或 Seq2Slate；若\emph{探索昂贵、日志充足}，优先 Offline RL + OPE；若\emph{reward 难定义}，优先 Preference/IRL；若系统是\emph{多模块、多场景}，优先 MARL；若\emph{动作空间极大或需要 coarse-to-fine}，优先 Hierarchical RL。工业上推荐的混合范式通常是：\textbf{Bandit 做在线探索 + Offline RL 做长期价值学习 + Actor-Critic/Seq2Slate 做列表生成 + CMDP/guardrail 做安全约束}。这类混合策略比纯单范式更符合真实推荐架构。
-
-\paragraph{结论}
-强化学习应用到推荐系统，并不是``把排序模型换成 RL''，而是\emph{用决策视角重写推荐系统的优化目标与训练闭环}。从 Bandit 到 MDP，从 SlateQ/Seq2Slate 到 world model 与 offline RL，再到 preference learning、MARL 和 HRL，方法演进本质上都在回答同一组工程问题：如何在超大动作空间中安全探索，如何用离线日志学习长期价值，如何把难以书写的业务目标转化为可靠 reward，如何让整页、整链路而不是单条样本变得最优。若只求短期点击，RL 未必必要；但当业务开始关心留存、体验、公平、生态与多目标约束时，RL 往往是最自然的统一框架。面试或技术分享中，最有说服力的回答不是背算法，而是能够说明：\emph{你为何选择某一范式，它解决了哪一类推荐问题，又如何与离线评估、在线安全和业务目标对齐。}
 \section{SlateQ 算法}
 
 SlateQ 是一种面向推荐列表场景的强化学习算法，其核心目标是解决推荐系统中
@@ -625,5 +765,1305 @@ v(s,\bot)+\sum_{j\in A}v(s,j)
 因此，SlateQ 既避免了直接处理巨大组合动作空间的困难，
 又能够在推荐排序中引入长期收益优化思想，是强化学习应用于推荐系统中 slate recommendation
 问题的一种典型范式。
+
+\section{基于 MDP 的长期策略学习范式：以 Top-K Off-Policy Correction for REINFORCE 为例}
+
+基于 MDP 的长期策略学习范式，是将推荐系统建模为一个序列决策问题。
+与传统 CTR/CVR 排序模型只关注当前曝光下的点击或转化不同，
+MDP 强化学习更关心当前推荐动作对后续用户状态和长期收益的影响。
+在该范式下，推荐系统不再只是学习一个静态打分函数，
+而是学习一个策略 $\pi$，使其在连续交互过程中最大化累计回报。
+
+Chen 等人在 \textit{Top-K Off-Policy Correction for a REINFORCE Recommender System}
+中，将 YouTube 推荐系统中的 top-$K$ 推荐问题建模为强化学习问题，
+并使用 REINFORCE 进行策略梯度优化 \cite{chen2019topk}。
+该工作是基于 MDP 的推荐策略学习的典型代表，
+其重点不是学习单个物品的监督排序分数，
+而是直接学习一个能够产生推荐动作的策略网络。
+
+\subsection{MDP 建模}
+
+该方法将推荐过程建模为一个马尔可夫决策过程：
+\[
+(\mathcal{S},\mathcal{A},P,R,\rho_0,\gamma).
+\]
+
+其中，$\mathcal{S}$ 表示用户状态空间。
+在推荐系统中，状态 $s_t$ 通常由用户历史行为、上下文信息和当前兴趣表示构成。
+例如，在视频推荐场景中，用户最近观看过的视频、点击行为、观看时长、
+搜索行为和上下文特征都可以用于构造当前状态。
+论文中使用循环神经网络对用户历史交互序列进行编码，
+得到一个连续向量形式的用户状态表示。
+
+$\mathcal{A}$ 表示动作空间。
+在该工作中，动作不是连续控制变量，而是推荐系统中的候选视频或物品。
+因此动作空间是一个极大的离散集合：
+\[
+a_t \in \mathcal{A}.
+\]
+工业推荐系统中的候选物品规模可以达到百万级甚至更大，
+这也是该问题相较于普通强化学习任务更加困难的原因。
+
+$P(s_{t+1}\mid s_t,a_t)$ 表示状态转移概率。
+它描述系统在状态 $s_t$ 下推荐物品 $a_t$ 后，
+用户状态如何变化。例如用户点击、观看、跳出、继续浏览等行为，
+都会影响下一时刻的用户状态 $s_{t+1}$。
+在真实推荐系统中，状态转移函数通常未知，
+因此该工作并不显式学习环境转移模型，
+而是直接基于日志数据使用策略梯度方法学习推荐策略。
+
+$R(s_t,a_t)$ 表示即时奖励函数。
+在视频推荐场景中，奖励可以由点击、观看时长、满意度、互动行为等隐式反馈构成。
+论文中强调推荐系统拥有大量日志反馈，例如 clicks 和 dwell time，
+这些反馈可以作为策略学习的训练信号。
+因此，奖励 $r_t$ 可以理解为用户对当前推荐物品的即时反馈。
+
+$\rho_0$ 表示初始状态分布，$\gamma$ 表示折扣因子。
+策略学习的目标是最大化长期累计回报：
+\[
+J(\theta)
+=
+\mathrm{E}_{\tau\sim \pi_{\theta}}
+\left[
+R(\tau)
+\right],
+\]
+其中轨迹为
+\[
+\tau=(s_0,a_0,s_1,a_1,\cdots),
+\]
+轨迹回报为
+\[
+R(\tau)
+=
+\sum_{t=0}^{|\tau|} r(s_t,a_t).
+\]
+更一般地，也可以使用折扣回报：
+\[
+R_t
+=
+\sum_{t'=t}^{|\tau|}
+\gamma^{t'-t}r(s_{t'},a_{t'}).
+\]
+
+因此，该建模方式的关键在于：
+\[
+\text{当前推荐动作 }a_t
+\rightarrow
+\text{当前奖励 }r_t
++
+\text{未来状态价值}.
+\]
+也就是说，策略不是只学习当前哪个视频最容易被点击，
+而是学习当前推荐哪个视频能够带来更好的长期用户反馈。
+
+\subsection{策略网络建模}
+
+该工作采用参数化策略 $\pi_{\theta}(a\mid s)$。
+给定用户状态 $s$，策略输出每个候选物品被推荐的概率：
+\[
+\pi_{\theta}(a\mid s).
+\]
+
+在实现上，用户状态 $s$ 可以由历史行为序列编码得到，
+物品 $a$ 也有对应的 embedding 表示。
+策略网络通过用户状态向量和物品 embedding 的匹配程度计算物品得分，
+再通过 softmax 得到动作分布：
+\[
+\pi_{\theta}(a\mid s)
+=
+\frac{
+\exp(s^{\mathrm{T}}v_a / T)
+}{
+\sum_{a'\in\mathcal{A}}
+\exp(s^{\mathrm{T}}v_{a'} / T)
+},
+\]
+其中 $v_a$ 表示物品 $a$ 的动作 embedding，
+$T$ 为温度系数。
+
+由于工业推荐系统中的动作空间极大，
+完整 softmax 的计算代价很高。
+因此实际训练中通常需要使用 sampled softmax 或候选采样方法，
+避免对全量百万级物品计算归一化概率。
+
+需要注意的是，虽然物品可以用连续 embedding 表示，
+但动作本身仍然是离散动作。
+也就是说，系统最终选择的是某一个具体视频或物品，
+而不是直接输出一个连续动作向量。
+Embedding 的作用是让策略网络能够泛化到相似物品，
+而不是把推荐问题变成连续动作控制问题。
+
+\subsection{REINFORCE 策略梯度}
+
+REINFORCE 是一种典型的策略梯度算法。
+其基本思想是：如果某个动作带来了较高的长期回报，
+就提高该动作在对应状态下被选择的概率；
+如果某个动作带来的回报较低，
+就降低该动作被选择的概率。
+
+对于目标函数
+\[
+J(\theta)
+=
+\mathrm{E}_{\tau\sim \pi_{\theta}}
+\left[
+R(\tau)
+\right],
+\]
+使用 log-trick 可以得到策略梯度：
+\[
+\nabla_{\theta}J(\theta)
+=
+\mathrm{E}_{\tau\sim \pi_{\theta}}
+\left[
+R(\tau)\nabla_{\theta}\log \pi_{\theta}(\tau)
+\right].
+\]
+
+展开到每个时间步，可写为：
+\[
+\nabla_{\theta}J(\theta)
+\approx
+\sum_{\tau\sim \pi_{\theta}}
+\sum_{t=0}^{|\tau|}
+R_t
+\nabla_{\theta}
+\log \pi_{\theta}(a_t\mid s_t).
+\]
+
+其中 $R_t$ 是从时间步 $t$ 开始的未来累计回报：
+\[
+R_t
+=
+\sum_{t'=t}^{|\tau|}
+\gamma^{t'-t}r(s_{t'},a_{t'}).
+\]
+
+从推荐系统角度看，
+如果用户在状态 $s_t$ 下被推荐物品 $a_t$ 后，
+后续产生了较高的观看时长、点击、继续浏览或其他正反馈，
+那么 $R_t$ 较大，
+模型就会增大 $\pi_{\theta}(a_t\mid s_t)$。
+反之，如果该推荐导致用户快速退出或后续反馈较差，
+则对应动作概率不会被强化。
+
+因此，该方法中的长期价值主要通过回报 $R_t$ 体现。
+单步监督排序模型通常只拟合当前点击标签，
+而 REINFORCE 使用的是未来累计反馈，
+所以它能够把后续用户行为反向归因到当前推荐动作上。
+
+\subsection{为什么需要 Off-Policy Correction}
+
+标准 REINFORCE 是 on-policy 方法，
+要求训练数据来自当前正在优化的策略 $\pi_{\theta}$。
+但是在工业推荐系统中，这一点通常无法满足。
+真实日志往往来自历史版本推荐系统，
+也就是行为策略 $\beta$，
+而不是当前正在学习的新策略 $\pi_{\theta}$。
+
+如果直接用旧策略产生的数据训练新策略，
+会产生明显的数据偏差。
+例如，旧推荐系统更常推荐热门视频，
+那么热门视频会获得更多曝光和反馈；
+如果不进行修正，新策略会继续偏向这些被旧系统频繁曝光的物品，
+形成 ``rich get richer'' 的马太效应。
+这并不一定说明这些物品本身长期价值最高，
+而可能只是因为它们被旧策略展示得更多。
+
+为了解决这一问题，论文使用重要性采样进行 off-policy correction。
+假设轨迹 $\tau$ 来自行为策略 $\beta$，
+则可以将目标策略下的期望改写为：
+\[
+\mathrm{E}_{\tau\sim \pi_{\theta}}
+\left[
+R(\tau)
+\right]
+=
+\mathrm{E}_{\tau\sim \beta}
+\left[
+\frac{\pi_{\theta}(\tau)}{\beta(\tau)}
+R(\tau)
+\right].
+\]
+
+其中重要性权重为：
+\[
+\frac{\pi_{\theta}(\tau)}{\beta(\tau)}
+=
+\prod_{t=0}^{|\tau|}
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}.
+\]
+
+完整轨迹级重要性权重方差很大，
+因此实际中通常使用逐步或近似的重要性修正。
+对应到每个时间步，可以写成：
+\[
+\nabla_{\theta}J(\theta)
+\approx
+\sum_{\tau\sim \beta}
+\sum_{t=0}^{|\tau|}
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}
+R_t
+\nabla_{\theta}
+\log \pi_{\theta}(a_t\mid s_t).
+\]
+
+其中
+\[
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}
+\]
+就是 off-policy correction 项。
+如果某个动作在旧策略下很容易被推荐，
+但在新策略下概率并不高，那么它的训练权重会被降低；
+如果某个动作在旧策略下较少被推荐，
+但新策略认为它有价值，则其权重会被提高。
+
+在真实系统中，行为策略 $\beta$ 往往不是单一模型，
+而是多个历史推荐系统或多个推荐模块的混合。
+因此，论文还训练了一个行为策略估计器来近似 $\beta(a\mid s)$，
+从而为日志样本提供 propensity correction。
+
+\subsection{Top-K 推荐下的特殊修正}
+
+上述 off-policy correction 适合单动作推荐，
+但真实推荐系统通常一次返回 top-$K$ 个物品。
+如果仍然把每个物品当成独立单动作处理，
+就会忽略一个事实：
+推荐系统关心的不是某个物品是否被采样为唯一动作，
+而是它是否出现在最终 top-$K$ 推荐列表中。
+
+因此，论文提出 top-$K$ off-policy correction。
+设基础策略为 $\pi_{\theta}(a\mid s)$。
+如果从该分布中独立采样 $K$ 次，
+则物品 $a$ 至少出现一次的概率为：
+\[
+\alpha_{\theta}(a\mid s)
+=
+1-
+\left(
+1-\pi_{\theta}(a\mid s)
+\right)^K.
+\]
+
+这里的 $\alpha_{\theta}(a\mid s)$ 表示物品 $a$ 进入 top-$K$ 推荐集合的概率。
+它与单次采样概率 $\pi_{\theta}(a\mid s)$ 不同。
+当 $K$ 较大时，即使 $\pi_{\theta}(a\mid s)$ 不需要非常接近 $1$，
+该物品也可能有较大概率出现在 top-$K$ 列表中。
+
+将 $\alpha_{\theta}$ 代入策略梯度后，
+可以得到 top-$K$ 修正后的梯度形式：
+\[
+\nabla_{\theta}J(\theta)
+\approx
+\sum_{\tau\sim \beta}
+\sum_{t=0}^{|\tau|}
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}
+\lambda_K(s_t,a_t)
+R_t
+\nabla_{\theta}
+\log \pi_{\theta}(a_t\mid s_t).
+\]
+
+其中额外的 top-$K$ 修正因子为：
+\[
+\lambda_K(s_t,a_t)
+=
+K
+\left(
+1-\pi_{\theta}(a_t\mid s_t)
+\right)^{K-1}.
+\]
+
+该因子的作用非常关键。
+当
+\[
+\pi_{\theta}(a_t\mid s_t)\rightarrow 0
+\]
+时，有
+\[
+\lambda_K(s_t,a_t)\rightarrow K.
+\]
+这说明如果一个高回报物品当前概率很小，
+top-$K$ 修正会更强地提升它的概率，
+使其更容易进入推荐列表。
+
+当
+\[
+\pi_{\theta}(a_t\mid s_t)\rightarrow 1
+\]
+时，有
+\[
+\lambda_K(s_t,a_t)\rightarrow 0.
+\]
+这说明如果某个物品已经几乎必然进入推荐列表，
+算法就不再继续把所有概率质量推向该物品。
+这有助于避免策略把概率过度集中到单个物品上，
+从而为 top-$K$ 列表中的其他物品保留空间。
+
+因此，top-$K$ correction 的核心直觉是：
+\[
+\text{推荐系统不需要让一个好物品成为唯一动作，}
+\]
+\[
+\text{只需要让它有足够概率进入 top-}K\text{ 列表。}
+\]
+
+\subsection{训练数据与优化流程}
+
+该方法的训练数据来自历史推荐日志。
+每条轨迹可以表示为：
+\[
+\tau=(s_0,a_0,r_0,s_1,a_1,r_1,\cdots).
+\]
+
+其中 $s_t$ 是用户状态，
+$a_t$ 是历史推荐系统在该状态下推荐的物品，
+$r_t$ 是用户反馈，例如点击、观看时长或其他满意度信号。
+这些数据并不是当前策略 $\pi_{\theta}$ 生成的，
+而是由历史行为策略 $\beta$ 生成的，
+因此训练时必须加入 off-policy correction。
+
+整体训练过程可以概括为：
+\[
+\text{历史日志}
+\rightarrow
+\text{估计用户状态}
+\rightarrow
+\text{计算目标策略概率 } \pi_{\theta}(a_t\mid s_t)
+\rightarrow
+\text{估计行为策略概率 } \beta(a_t\mid s_t)
+\]
+\[
+\rightarrow
+\text{计算回报 } R_t
+\rightarrow
+\text{加入 off-policy 与 top-}K\text{ correction}
+\rightarrow
+\text{更新策略网络}.
+\]
+
+对应的优化目标可以理解为最大化如下加权策略梯度：
+\[
+\sum_{\tau\sim \beta}
+\sum_{t=0}^{|\tau|}
+w_t
+R_t
+\nabla_{\theta}
+\log \pi_{\theta}(a_t\mid s_t),
+\]
+其中权重为
+\[
+w_t
+=
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}
+\lambda_K(s_t,a_t).
+\]
+
+第一项
+\[
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}
+\]
+用于修正新旧策略分布不一致带来的偏差；
+第二项
+\[
+\lambda_K(s_t,a_t)
+\]
+用于修正 top-$K$ 推荐场景下单物品采样概率与进入列表概率之间的差异。
+
+\subsection{该范式的意义}
+
+该工作体现了基于 MDP 的长期策略学习范式在推荐系统中的几个关键特点。
+
+首先，它把推荐行为建模为策略 $\pi_{\theta}(a\mid s)$，
+而不是单纯的监督学习打分函数。
+模型优化的是长期累计回报，而不是单次曝光下的点击标签。
+
+其次，它通过 REINFORCE 将用户后续反馈 $R_t$ 反向归因到当前推荐动作 $a_t$，
+从而使推荐系统能够学习长期用户价值。
+这对于短视频、信息流、音乐推荐等连续消费场景尤其重要，
+因为当前推荐会显著影响用户之后是否继续浏览和再次访问。
+
+再次，它正视了工业推荐系统中的 off-policy 问题。
+真实训练数据往往来自历史推荐策略，
+如果不做修正，模型容易复制旧系统的曝光偏差。
+重要性采样形式的 off-policy correction 可以在一定程度上缓解该问题。
+
+最后，它针对 top-$K$ 推荐提出了专门的修正项。
+普通 REINFORCE 关注单个动作的采样概率，
+而推荐系统通常一次展示多个物品。
+Top-$K$ correction 将优化目标从
+``让某个物品成为唯一被采样动作''
+调整为
+``让高价值物品以合适概率进入推荐列表''，
+因此更符合真实推荐系统的输出形式。
+
+\subsection{小结}
+
+总体来看，
+\textit{Top-K Off-Policy Correction for a REINFORCE Recommender System}
+展示了如何将生产级推荐系统建模为 MDP，
+并使用策略梯度方法直接优化长期用户反馈。
+其建模方式可以概括为：
+\[
+\text{用户状态 }s_t
++
+\text{推荐动作 }a_t
++
+\text{用户反馈 }r_t
++
+\text{后续状态 }s_{t+1}.
+\]
+模型学习的是策略
+\[
+\pi_{\theta}(a\mid s),
+\]
+目标是最大化未来累计回报
+\[
+\sum_t \gamma^t r_t.
+\]
+
+与传统排序模型相比，该方法的核心区别在于：
+传统排序模型主要回答
+``当前用户最可能点击哪个物品''；
+而基于 MDP 的策略学习回答的是
+``当前推荐哪个物品，能够带来更高的长期用户收益''。
+因此，该范式更适合用于长期用户参与度、会话质量、留存和连续消费场景下的推荐优化。
+
+\section{基于 Contextual Bandit 的在线探索范式：
+以 A Contextual-Bandit Approach to Personalized News Article Recommendation 为例}
+
+基于 Contextual Bandit 的推荐方法，是强化学习在推荐系统中最早、最经典的一类应用范式。
+与完整 MDP 强化学习不同，Contextual Bandit 通常不显式建模长期状态转移，
+而是将推荐过程简化为单步决策问题：
+系统观察当前用户和候选物品的上下文特征，选择一个物品进行展示，
+然后根据用户是否点击得到即时奖励，并据此更新推荐策略。
+
+Li 等人在
+\textit{A Contextual-Bandit Approach to Personalized News Article Recommendation}
+中，将个性化新闻推荐建模为 Contextual Bandit 问题，并提出 LinUCB 算法。
+该工作面向 Yahoo! 首页新闻推荐场景，
+其目标是在动态变化的新闻池中，根据用户上下文和新闻内容信息，
+在线选择最可能被点击的新闻文章。
+
+\subsection{问题建模}
+
+在新闻推荐场景中，每次用户访问页面时，系统面对一个候选新闻集合
+\[
+\mathcal{A}_t=\{a_{t,1},a_{t,2},\cdots,a_{t,n}\}.
+\]
+系统需要从候选集合中选择一篇新闻
+\[
+a_t\in\mathcal{A}_t
+\]
+展示给用户。
+
+对于每个候选新闻 $a$，系统可以构造一个上下文特征向量
+\[
+x_{t,a}\in\mathbb{R}^{d}.
+\]
+该特征向量可以包含用户特征、新闻特征以及用户--新闻交叉特征。
+例如，用户特征可以包括地域、年龄、历史点击兴趣等；
+新闻特征可以包括类别、主题、发布时间等；
+交叉特征则用于描述某类用户对某类新闻的偏好。
+
+展示新闻 $a_t$ 后，用户会产生点击或未点击反馈：
+\[
+r_t=
+\begin{cases}
+1, & \text{用户点击新闻},\\
+0, & \text{用户未点击新闻}.
+\end{cases}
+\]
+因此，算法的目标是最大化长期累计点击数：
+\[
+\max \sum_{t=1}^{T} r_t.
+\]
+
+与 MDP 推荐不同，Contextual Bandit 不考虑当前推荐动作对未来用户状态的影响。
+也就是说，它关注的是当前上下文下的即时点击收益：
+\[
+\mathrm{E}[r_t\mid x_{t,a}].
+\]
+因此，它更适合新闻推荐、新内容探索、冷启动探索等反馈较快、决策链路较短的场景。
+
+\subsection{探索--利用问题}
+
+Contextual Bandit 的核心困难是探索--利用平衡。
+如果系统只推荐当前估计点击率最高的新闻，就可能长期忽略新新闻或冷门新闻，
+导致模型无法发现潜在高收益内容。
+如果系统过度随机探索，又会损害用户体验和当前点击率。
+
+因此，推荐策略需要同时考虑两部分：
+\[
+\text{推荐得分}
+=
+\text{当前收益估计}
++
+\text{不确定性奖励}.
+\]
+其中，当前收益估计用于利用已有知识，
+不确定性奖励用于鼓励系统探索估计不充分的新闻。
+
+LinUCB 正是基于这一思想设计的。
+它假设新闻点击奖励与上下文特征之间近似满足线性关系：
+\[
+\mathrm{E}[r_{t,a}\mid x_{t,a}]
+=
+x_{t,a}^{\mathrm{T}}\theta_a,
+\]
+其中 $\theta_a$ 是新闻 $a$ 对应的参数向量。
+由于 $\theta_a$ 需要从历史反馈中估计，
+因此模型对不同新闻的点击收益存在不确定性。
+LinUCB 使用置信上界来同时表示收益估计和探索价值。
+
+\subsection{Disjoint LinUCB 算法}
+
+在 Disjoint LinUCB 中，每个新闻文章 $a$ 维护一组独立参数。
+对于每个候选新闻 $a$，维护矩阵
+\[
+A_a\in\mathbb{R}^{d\times d}
+\]
+和向量
+\[
+b_a\in\mathbb{R}^{d}.
+\]
+其中，$A_a$ 用于累计该新闻相关上下文特征的二阶统计量，
+$b_a$ 用于累计点击奖励加权后的特征。
+
+参数估计为
+\[
+\hat{\theta}_a=A_a^{-1}b_a.
+\]
+对于当前候选新闻 $a$，LinUCB 计算其置信上界分数：
+\[
+p_{t,a}
+=
+x_{t,a}^{\mathrm{T}}\hat{\theta}_a
++
+\alpha
+\sqrt{
+x_{t,a}^{\mathrm{T}}A_a^{-1}x_{t,a}
+}.
+\]
+其中，第一项
+\[
+x_{t,a}^{\mathrm{T}}\hat{\theta}_a
+\]
+表示当前模型估计的点击收益；
+第二项
+\[
+\alpha
+\sqrt{
+x_{t,a}^{\mathrm{T}}A_a^{-1}x_{t,a}
+}
+\]
+表示模型对该估计的不确定性。
+超参数 $\alpha$ 控制探索强度。
+当 $\alpha$ 较大时，算法更倾向于探索不确定性较高的新闻；
+当 $\alpha$ 较小时，算法更倾向于利用当前估计收益较高的新闻。
+
+系统最终选择置信上界分数最大的新闻：
+\[
+a_t
+=
+\mathop{\arg\max}_{a\in\mathcal{A}_t}
+p_{t,a}.
+\]
+
+当用户反馈 $r_t$ 返回后，只更新被展示新闻 $a_t$ 的参数：
+\[
+A_{a_t}
+\leftarrow
+A_{a_t}
++
+x_{t,a_t}x_{t,a_t}^{\mathrm{T}},
+\]
+\[
+b_{a_t}
+\leftarrow
+b_{a_t}
++
+r_t x_{t,a_t}.
+\]
+未展示的新闻由于没有观察到用户反馈，因此不更新。
+
+\subsection{算法流程}
+
+Disjoint LinUCB 的流程可以概括如下：
+
+\begin{enumerate}
+    \item 对每个新闻 $a$ 初始化
+    \[
+    A_a=I_d,\qquad b_a=0.
+    \]
+
+    \item 在时刻 $t$，观察当前候选新闻集合 $\mathcal{A}_t$，
+    并为每个候选新闻 $a$ 构造上下文特征 $x_{t,a}$。
+
+    \item 对每个候选新闻计算参数估计：
+    \[
+    \hat{\theta}_a=A_a^{-1}b_a.
+    \]
+
+    \item 计算 UCB 推荐分数：
+    \[
+    p_{t,a}
+    =
+    x_{t,a}^{\mathrm{T}}\hat{\theta}_a
+    +
+    \alpha
+    \sqrt{
+    x_{t,a}^{\mathrm{T}}A_a^{-1}x_{t,a}
+    }.
+    \]
+
+    \item 选择分数最高的新闻：
+    \[
+    a_t=\mathop{\arg\max}_{a\in\mathcal{A}_t}p_{t,a}.
+    \]
+
+    \item 展示新闻 $a_t$，观察用户点击反馈 $r_t$。
+
+    \item 更新被展示新闻的参数：
+    \[
+    A_{a_t}
+    \leftarrow
+    A_{a_t}
+    +
+    x_{t,a_t}x_{t,a_t}^{\mathrm{T}},
+    \]
+    \[
+    b_{a_t}
+    \leftarrow
+    b_{a_t}
+    +
+    r_t x_{t,a_t}.
+    \]
+\end{enumerate}
+
+\subsection{Hybrid LinUCB}
+
+Disjoint LinUCB 为每篇新闻维护独立参数，
+因此不同新闻之间无法共享统计信息。
+然而在实际新闻推荐中，很多新闻之间存在相似性。
+例如，同一类别、同一主题或同一热点事件下的新闻，
+可能具有相似的用户点击模式。
+如果完全独立建模，每篇新新闻都需要从零开始学习，
+这会加重冷启动问题。
+
+为了解决这个问题，论文进一步提出 Hybrid LinUCB。
+Hybrid LinUCB 将奖励期望分解为两部分：
+一部分是所有新闻共享的全局参数，
+另一部分是每篇新闻自己的个性化参数：
+\[
+\mathrm{E}[r_{t,a}\mid x_{t,a},z_{t,a}]
+=
+z_{t,a}^{\mathrm{T}}\beta
++
+x_{t,a}^{\mathrm{T}}\theta_a.
+\]
+其中，$z_{t,a}$ 表示用户和新闻之间的共享交叉特征，
+$\beta$ 是跨新闻共享的全局参数；
+$x_{t,a}$ 是新闻 $a$ 自己的上下文特征，
+$\theta_a$ 是新闻 $a$ 的独立参数。
+
+这种结构的好处是：
+\[
+\text{全局参数负责跨新闻迁移，}
+\]
+\[
+\text{局部参数负责刻画单篇新闻的特殊性。}
+\]
+因此，Hybrid LinUCB 更适合动态新闻池和冷启动新闻场景。
+
+\subsection{离线评估方法}
+
+推荐系统中的在线实验成本较高，
+因此论文还讨论了如何使用历史随机流量日志对 bandit 算法进行离线评估。
+核心思想是 replay evaluation。
+
+假设历史日志来自随机推荐策略。
+每条日志记录为
+\[
+(x_t,\mathcal{A}_t,a_t,r_t),
+\]
+其中 $a_t$ 是历史系统随机展示的新闻，$r_t$ 是用户反馈。
+对于一个待评估的新算法，在第 $t$ 条日志上，
+它根据上下文和候选集选择一个动作
+\[
+\hat{a}_t.
+\]
+如果
+\[
+\hat{a}_t=a_t,
+\]
+则说明新算法的选择与历史随机系统当时展示的新闻一致，
+因此可以使用该条日志的反馈 $r_t$ 来更新和评估新算法。
+如果
+\[
+\hat{a}_t\neq a_t,
+\]
+则无法知道用户看到 $\hat{a}_t$ 后会不会点击，
+因此丢弃该条日志。
+
+该方法的关键前提是历史日志来自随机推荐策略，
+这样保留下来的样本对待评估算法是无偏的。
+因此，replay evaluation 可以在不上线新算法的情况下，
+比较不同 bandit 策略的点击表现。
+
+\subsection{该算法解决的推荐系统痛点}
+
+该工作主要解决了推荐系统中的三个痛点。
+
+首先，它解决了新内容和动态候选池问题。
+新闻推荐中的文章生命周期很短，
+候选池不断变化，传统协同过滤很难为新文章积累足够交互数据。
+LinUCB 可以基于上下文特征进行在线学习，
+即使新闻刚出现，也可以根据其内容特征和用户特征进行初步推荐。
+
+其次，它解决了探索--利用平衡问题。
+传统监督排序模型通常只利用历史数据学习点击率，
+容易偏向已经被大量曝光的热门内容。
+LinUCB 通过置信上界项显式鼓励探索，
+使系统有机会发现尚未充分曝光但可能高收益的新闻。
+
+再次，它提供了一种可离线评估的在线学习框架。
+推荐系统中的在线探索存在风险，
+直接上线未经验证的策略可能损害用户体验。
+论文提出的 replay evaluation 利用随机流量日志进行离线评估，
+为后续工业推荐中的反事实评估和安全上线提供了重要思路。
+
+\subsection{与完整强化学习推荐方法的区别}
+
+Contextual Bandit 可以看作强化学习推荐系统中的轻量级形式。
+它与 MDP 强化学习的区别在于：
+Contextual Bandit 只优化当前上下文下的即时奖励，
+而不显式建模动作对未来状态的影响。
+
+如果写成强化学习形式，MDP 方法关注的是
+\[
+Q(s_t,a_t)
+=
+r_t+\gamma V(s_{t+1}),
+\]
+而 Contextual Bandit 更接近于只关注
+\[
+\mathrm{E}[r_t\mid x_{t,a}].
+\]
+也就是说，Bandit 方法没有显式的长期回报传播，
+也没有状态转移建模。
+
+因此，Contextual Bandit 更适合反馈即时、决策短链路、探索需求明显的场景；
+而 MDP 强化学习更适合短视频、信息流、电商会话等长期交互场景。
+在工业系统中，二者也常常配合使用：
+Bandit 用于新内容探索、召回探索和冷启动流量分配，
+MDP 或离线 RL 用于长期用户价值优化。
+
+\subsection{小结}
+
+总体来看，
+\textit{A Contextual-Bandit Approach to Personalized News Article Recommendation}
+是强化学习思想进入工业推荐系统的经典代表。
+它将新闻推荐建模为 Contextual Bandit 问题，
+用 LinUCB 在点击收益估计和不确定性探索之间进行平衡。
+其核心公式为
+\[
+p_{t,a}
+=
+x_{t,a}^{\mathrm{T}}\hat{\theta}_a
++
+\alpha
+\sqrt{
+x_{t,a}^{\mathrm{T}}A_a^{-1}x_{t,a}
+}.
+\]
+其中，第一项表示当前点击收益估计，
+第二项表示探索价值。
+
+该算法的本质可以概括为：
+\[
+\text{Contextual Bandit}
+=
+\text{上下文建模}
++
+\text{即时奖励学习}
++
+\text{不确定性驱动探索}.
+\]
+它不追求完整的长期决策建模，
+但在新闻推荐、新内容冷启动和在线探索中具有很强的实用价值。
+因此，在推荐系统的强化学习谱系中，
+Contextual Bandit 通常被视为最轻量、最容易落地的一类方法。
+
+
+
+\section{Top-K Off-Policy Correction for REINFORCE 与 SlateQ 对推荐系统落地痛点的解决}
+
+强化学习应用到推荐系统时，最大的困难并不只是算法本身，
+而是推荐系统具有与传统强化学习环境明显不同的工程约束。
+首先，推荐系统的动作空间极大。动作通常对应具体物品，
+而工业推荐系统中的候选物品规模可能达到百万级甚至更高。
+其次，推荐系统通常一次展示多个物品，而不是单个动作，
+因此推荐动作可能是一个 top-$K$ 列表或 slate，其组合空间规模为
+\[
+\binom{|\mathcal{I}|}{K}.
+\]
+再次，真实系统通常不能频繁在线试错，
+训练数据大多来自历史推荐日志，这会带来明显的 off-policy 偏差。
+最后，推荐系统不仅关心当前点击，还关心长期观看、留存、复访和用户满意度。
+因此，强化学习推荐系统需要同时解决
+\[
+\text{超大离散动作空间}
++
+\text{离线日志偏差}
++
+\text{top-}K\text{ 多物品输出}
++
+\text{长期价值优化}
+\]
+这几个问题。
+
+Top-K Off-Policy Correction for REINFORCE 和 SlateQ 分别从 policy-based
+和 value-based 两条路线解决这些痛点。
+前者的重点是让 REINFORCE 能够在生产级 top-$K$ 推荐系统中使用；
+后者的重点是让 Q-learning 能够处理 slate/list 这种组合动作空间。
+
+\subsection{Top-K Off-Policy Correction for REINFORCE 解决的问题}
+
+Top-K Off-Policy Correction for REINFORCE 将推荐系统建模为 MDP，
+并学习一个随机策略
+\[
+\pi_{\theta}(a\mid s),
+\]
+其中 $s$ 表示用户状态，$a$ 表示候选物品。
+策略的目标是最大化长期回报：
+\[
+J(\theta)
+=
+\mathrm{E}_{\tau\sim \pi_{\theta}}
+\left[
+\sum_{t=0}^{T}\gamma^t r_t
+\right].
+\]
+与传统监督排序不同，REINFORCE 不是只根据当前点击标签更新模型，
+而是使用未来累计回报 $R_t$ 更新当前推荐动作：
+\[
+\nabla_{\theta}J(\theta)
+\approx
+\sum_t
+R_t
+\nabla_{\theta}\log \pi_{\theta}(a_t\mid s_t).
+\]
+因此，如果某个推荐物品不仅带来了当前点击，
+还带来了后续观看、继续浏览或长期参与度提升，
+其对应动作概率就会被增强。
+
+该方法首先解决的是\textbf{长期价值建模问题}。
+传统 CTR 排序模型学习的是
+\[
+P(\text{click}\mid s,a),
+\]
+而 REINFORCE 学习的是
+\[
+\pi_{\theta}(a\mid s)
+\]
+使得长期累计反馈最大。
+也就是说，它回答的不是
+``当前用户最可能点击哪个物品''，
+而是
+``当前推荐哪个物品更有利于长期用户收益''。
+
+其次，该方法解决的是\textbf{离线日志带来的 off-policy 偏差}。
+标准 REINFORCE 要求训练轨迹来自当前策略 $\pi_{\theta}$，
+但工业推荐系统中的日志通常来自历史策略或多个旧推荐器，
+记为行为策略 $\beta$。
+如果直接用这些日志训练当前策略，
+模型会继承历史策略的曝光偏差。
+例如，热门物品被历史系统频繁曝光，因此日志中有更多反馈；
+如果不修正，模型可能把``被展示得多''误认为``长期价值高''。
+
+为此，该方法引入重要性采样形式的 off-policy correction：
+\[
+w_t
+=
+\frac{
+\pi_{\theta}(a_t\mid s_t)
+}{
+\beta(a_t\mid s_t)
+}.
+\]
+修正后的策略梯度可以写成
+\[
+\nabla_{\theta}J(\theta)
+\approx
+\sum_t
+w_t R_t
+\nabla_{\theta}\log \pi_{\theta}(a_t\mid s_t).
+\]
+其中 $\beta(a_t\mid s_t)$ 表示历史策略在状态 $s_t$ 下推荐物品 $a_t$
+的概率。该项的作用是修正目标策略和日志策略之间的分布差异，
+使模型不只是复制旧系统的曝光偏置。
+
+第三，该方法解决的是\textbf{top-$K$ 推荐与单动作策略不一致的问题}。
+普通 REINFORCE 假设每次只采样一个动作，
+但真实推荐系统往往一次返回 $K$ 个物品。
+因此，系统关心的不是某个物品是否成为唯一动作，
+而是它是否能够进入最终的 top-$K$ 推荐列表。
+
+如果单物品策略概率为
+\[
+\pi_{\theta}(a\mid s),
+\]
+那么在一种简化理解下，物品 $a$ 至少进入 $K$ 次采样结果中的概率可以写成
+\[
+\alpha_K(a\mid s)
+=
+1-
+\left(
+1-\pi_{\theta}(a\mid s)
+\right)^K.
+\]
+其中 $\alpha_K(a\mid s)$ 表示物品进入 top-$K$ 推荐集合的概率。
+于是，top-$K$ 场景下更合理的优化对象不再是
+\[
+\log \pi_{\theta}(a\mid s),
+\]
+而是
+\[
+\log \alpha_K(a\mid s).
+\]
+对应地，梯度会根据物品进入 top-$K$ 的概率进行修正。
+其直观含义是：
+\[
+\text{推荐系统不需要把一个高价值物品变成唯一最高概率动作，}
+\]
+\[
+\text{只需要让它以合适概率进入 top-}K\text{ 列表。}
+\]
+这可以避免策略把全部概率质量过度集中到少数物品上，
+更符合真实推荐系统一次展示多个物品的输出形式。
+
+第四，该方法缓解了\textbf{超大离散动作空间问题}。
+在推荐系统中，动作虽然可以用 embedding 表示，
+但动作本质仍然是离散物品：
+\[
+a\in\mathcal{I}.
+\]
+物品 embedding 的作用是参数化策略，
+例如通过用户状态向量 $h_s$ 和物品向量 $v_a$ 计算匹配分数：
+\[
+\pi_{\theta}(a\mid s)
+\propto
+\exp(h_s^{\mathrm{T}}v_a).
+\]
+这样，策略网络不需要为每个物品单独学习完全独立的参数，
+而是可以通过 embedding 在相似物品之间泛化。
+在实际系统中，通常还会结合候选采样、sampled softmax 或召回候选集，
+避免每次在全量百万级物品上计算完整 softmax。
+
+因此，Top-K Off-Policy Correction for REINFORCE 的解决路线可以概括为：
+\[
+\text{参数化离散动作策略}
++
+\text{历史日志 off-policy 修正}
++
+\text{top-}K\text{ 曝光概率修正}
++
+\text{长期回报优化}.
+\]
+它并没有把离散动作空间变成连续动作空间，
+而是用 embedding 和采样机制让超大离散动作空间变得可训练。
+
+\subsection{SlateQ 解决的问题}
+
+SlateQ 面对的是另一类更严重的动作空间问题：
+推荐系统通常一次展示的是一个列表
+\[
+A=\{i_1,i_2,\cdots,i_K\},
+\]
+如果直接把整个列表当作动作，则动作空间规模为
+\[
+\binom{|\mathcal{I}|}{K}.
+\]
+当 $|\mathcal{I}|$ 很大时，直接学习
+\[
+Q(s,A)
+\]
+几乎不可行。
+这就是 slate recommendation 中的组合动作空间爆炸问题。
+
+SlateQ 的核心思想是：
+不直接学习整个列表的 Q 值，
+而是把列表价值分解成用户可能选择的单个物品的长期价值。
+设用户在状态 $s$ 下看到列表 $A$ 后选择物品 $i$ 的概率为
+\[
+P(i\mid s,A),
+\]
+物品 $i$ 被用户消费后的长期价值为
+\[
+Q(s,i).
+\]
+则 slate-level 价值可以分解为
+\[
+Q(s,A)
+=
+\sum_{i\in A}
+P(i\mid s,A)Q(s,i).
+\]
+这个公式将组合动作价值
+\[
+Q(s,A)
+\]
+转化为 item-level 价值
+\[
+Q(s,i)
+\]
+的加权和。
+因此，SlateQ 不需要对所有可能列表分别学习 Q 值，
+而只需要学习每个物品在当前用户状态下的长期价值。
+
+这一步解决了\textbf{组合动作空间爆炸}。
+原本需要处理的动作数量是
+\[
+\binom{|\mathcal{I}|}{K},
+\]
+而分解之后，模型主要学习的是
+\[
+Q(s,i), \quad i\in\mathcal{I}.
+\]
+也就是说，SlateQ 把列表级 RL 问题转化成了物品级长期价值估计
+和列表级组合优化问题。
+
+SlateQ 还通过用户选择模型处理列表内部的竞争关系。
+在 MNL 用户选择模型下，设物品吸引力为
+\[
+v(s,i)>0,
+\]
+用户不点击任何物品的吸引力为
+\[
+v(s,\bot)>0.
+\]
+则用户选择物品 $i$ 的概率为
+\[
+P(i\mid s,A)
+=
+\frac{
+v(s,i)
+}{
+v(s,\bot)+\sum_{j\in A}v(s,j)
+}.
+\]
+代入 SlateQ 分解式可得：
+\[
+Q(s,A)
+=
+\frac{
+\sum_{i\in A}v(s,i)Q(s,i)
+}{
+v(s,\bot)+\sum_{j\in A}v(s,j)
+}.
+\]
+这个式子说明，列表价值不是简单的
+\[
+\sum_{i\in A}Q(s,i),
+\]
+也不是简单的
+\[
+\sum_{i\in A}v(s,i)Q(s,i).
+\]
+因为每个物品进入列表后，不仅会增加分子中的长期收益贡献，
+也会增加分母中的总吸引力，从而影响其他物品被点击的概率。
+因此，SlateQ 显式建模了列表中物品之间的点击竞争关系。
+
+在求解最优列表时，SlateQ 可以把问题写成：
+\[
+A^*
+=
+\mathop{\arg\max}_{A\subseteq \mathcal{I}, |A|=K}
+\frac{
+\sum_{i\in A}v_iQ_i
+}{
+v_0+\sum_{i\in A}v_i
+},
+\]
+其中
+\[
+v_i=v(s,i),\quad Q_i=Q(s,i),\quad v_0=v(s,\bot).
+\]
+该问题虽然仍然是组合优化问题，
+但它已经不需要枚举所有 slate。
+对于固定阈值 $\lambda$，可以转化为选择
+\[
+v_i(Q_i-\lambda)
+\]
+最大的 $K$ 个物品。
+随后根据当前列表价值更新 $\lambda$：
+\[
+\lambda
+\leftarrow
+\frac{
+\sum_{i\in A}v_iQ_i
+}{
+v_0+\sum_{i\in A}v_i
+}.
+\]
+通过这种迭代方式，SlateQ 将原本不可枚举的列表优化问题，
+转化为若干次 top-$K$ 选择问题。
+在实际系统中，通常先由召回模型产生较小候选集 $\mathcal{C}$，
+再在 $\mathcal{C}$ 上进行 SlateQ 列表优化：
+\[
+A^*
+=
+\mathop{\arg\max}_{A\subseteq \mathcal{C}, |A|=K}
+Q(s,A).
+\]
+
+因此，SlateQ 对推荐系统落地痛点的解决可以概括为：
+\[
+\text{item-level 长期价值学习}
++
+\text{用户选择模型}
++
+\text{slate 价值分解}
++
+\text{可求解的列表优化}.
+\]
+它解决的重点不是单个物品动作空间大，
+而是整个推荐列表作为组合动作时无法直接进行 Q-learning 的问题。
+
+\subsection{二者对超大离散动作空间的处理差异}
+
+Top-K Off-Policy Correction for REINFORCE 和 SlateQ 都面对推荐系统中的超大动作空间，
+但它们处理问题的角度不同。
+
+Top-K REINFORCE 的动作仍然是单个物品：
+\[
+a\in\mathcal{I}.
+\]
+它通过参数化策略
+\[
+\pi_{\theta}(a\mid s)
+\]
+为每个物品分配被推荐概率。
+由于物品数量巨大，实际训练中依赖 item embedding、候选采样和近似 softmax 等方法，
+使得百万级离散动作空间可以被策略网络处理。
+同时，它通过 top-$K$ correction 把单物品采样概率修正为进入 top-$K$ 列表的概率，
+从而适配真实推荐系统一次输出多个物品的形式。
+
+SlateQ 的动作则是一个列表：
+\[
+A\subseteq\mathcal{I},\quad |A|=K.
+\]
+如果直接学习 $Q(s,A)$，动作空间是组合级别的。
+SlateQ 通过
+\[
+Q(s,A)
+=
+\sum_{i\in A}P(i\mid s,A)Q(s,i)
+\]
+把 slate-level 价值分解为 item-level 价值，
+从而避免直接枚举所有推荐列表。
+它解决的是组合动作空间爆炸问题，
+而不是单纯的单物品动作空间过大问题。
+
+二者的区别可以总结如下：
+\[
+\begin{array}{c|c|c}
+\text{方法} & \text{动作建模} & \text{解决动作空间问题的方式} \\
+\hline
+\text{Top-K REINFORCE}
+&
+\text{单物品动作 } a
+&
+\text{embedding 参数化策略 + 采样近似 + top-}K\text{ 修正}
+\\
+\hline
+\text{SlateQ}
+&
+\text{列表动作 } A
+&
+\text{slate 价值分解 + 用户选择模型 + top-}K\text{ 列表优化}
+\end{array}
+\]
+
+更直观地说，Top-K REINFORCE 解决的是：
+\[
+\text{如何在百万级物品中学习一个能产生 top-}K\text{ 推荐的策略。}
+\]
+SlateQ 解决的是：
+\[
+\text{如何避免把每一个推荐列表都当成一个独立动作来学习 Q 值。}
+\]
+
+\subsection{二者分别适合的推荐场景}
+
+如果系统更关注策略学习本身，
+例如希望直接优化长期观看、长期点击或用户参与度，
+并且训练数据主要来自历史日志，
+那么 Top-K Off-Policy Correction for REINFORCE 更合适。
+它适合 feed、短视频、音乐推荐等连续消费场景，
+尤其适合需要从旧策略日志中学习新策略的工业系统。
+
+如果系统更关注列表级重排，
+例如希望在候选集上选择一个整体最优的推荐列表，
+同时考虑物品之间的竞争、点击分配和长期价值，
+那么 SlateQ 更合适。
+它适合精排后的重排、相关推荐列表、首页模块列表等 slate recommendation 场景。
+
+两者并不是互斥关系。
+在一个完整推荐系统中，可以先用召回和排序模型产生候选集，
+再用类似 Top-K REINFORCE 的策略学习方法优化长期用户反馈，
+也可以在最后重排阶段使用 SlateQ 对候选列表进行长期价值优化。
+其共同目标都是让推荐系统从短期点击优化走向长期决策优化。
+
+\subsection{小结}
+
+Top-K Off-Policy Correction for REINFORCE 和 SlateQ 分别代表了强化学习推荐系统中的两条重要路线。
+Top-K REINFORCE 属于 policy-based 方法，
+重点解决生产日志下的 off-policy 学习、超大离散物品空间和 top-$K$ 输出问题；
+SlateQ 属于 value-based 方法，
+重点解决 slate/list 推荐中组合动作空间爆炸和列表级长期价值评估问题。
+
+因此，可以将二者的核心贡献概括为：
+\[
+\text{Top-K REINFORCE：让策略梯度能在生产级 top-}K\text{ 推荐中训练。}
+\]
+\[
+\text{SlateQ：让 Q-learning 能在组合型推荐列表动作中可解。}
+\]
+
+从推荐系统落地角度看，Top-K REINFORCE 更像是在解决
+``如何从历史日志中训练一个长期收益更高的推荐策略''；
+SlateQ 更像是在解决
+``如何对一个推荐列表整体计算长期价值并进行可扩展优化''。
+二者共同说明，强化学习推荐系统的关键不是把 item embedding 当成连续动作，
+而是在超大离散动作和组合列表动作下，
+通过参数化、采样、off-policy 修正和价值分解等方法，
+让长期决策优化变得可训练、可评估、可上线。
 
 \end{document}
