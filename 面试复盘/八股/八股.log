@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.5.26)  17 APR 2026 01:14
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2024) (preloaded format=pdflatex 2024.5.26)  18 APR 2026 14:16
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -671,15 +671,15 @@ Package rerunfilecheck Warning: File `八股.out' has changed.
 (rerunfilecheck)                or use package `bookmark'.
 
 Package rerunfilecheck Info: Checksums for `八股.out':
-(rerunfilecheck)             Before: DDD16CC36C8FACF9BDD271C3EA38CBAD;4028
-(rerunfilecheck)             After:  F96ABFF3481A4CE677A10B256C842200;4198.
+(rerunfilecheck)             Before: F96ABFF3481A4CE677A10B256C842200;4198
+(rerunfilecheck)             After:  0FDD63282A41101CD8FC0AE7C812115D;4526.
  ) 
 Here is how much of TeX's memory you used:
- 15782 strings out of 476023
- 271171 string characters out of 5791734
+ 15791 strings out of 476023
+ 271328 string characters out of 5791734
  1966190 words of memory out of 5000000
- 37224 multiletter control sequences out of 15000+600000
- 634241 words of font info for 316 fonts, out of 8000000 for 9000
+ 37229 multiletter control sequences out of 15000+600000
+ 634781 words of font info for 318 fonts, out of 8000000 for 9000
  36 hyphenation exceptions out of 8191
  80i,6n,83p,711b,552s stack positions out of 10000i,1000n,20000p,200000b,200000s
 <c:/Windows/Fonts/simsun.ttc><c:/Windows/Fonts/simhei.ttf><c:/Windows/Fonts/s
@@ -758,10 +758,10 @@ cmsl10.pfb><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pf
 b><c:/texlive/2024/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb><c:/texl
 ive/2024/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb><c:/texlive/
 2024/texmf-dist/fonts/type1/public/cm-super/sfrm1000.pfb>
-Output written on 八股.pdf (10 pages, 943282 bytes).
+Output written on 八股.pdf (10 pages, 945069 bytes).
 PDF statistics:
- 1031 PDF objects out of 1200 (max. 8388607)
- 735 compressed objects within 8 object streams
- 53 named destinations out of 1000 (max. 500000)
- 537 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 1037 PDF objects out of 1200 (max. 8388607)
+ 741 compressed objects within 8 object streams
+ 55 named destinations out of 1000 (max. 500000)
+ 545 words of extra memory for PDF output out of 10000 (max. 10000000)
 
