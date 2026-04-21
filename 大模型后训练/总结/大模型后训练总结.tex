@@ -7,7 +7,11 @@
 \setlength{\parskip}{0.5em}
 \usepackage{graphicx}
 \usepackage{float}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
 \begin{document}
+
 \section{RLHF方法脉络梳理}
 
 RLHF（Reinforcement Learning from Human Feedback）的核心目标，
@@ -64,68 +68,82 @@ PPO、DPO、DRPO 与 DAPO 分别从策略更新稳定性、偏好优化简化、
     \item 在 RLHF 场景中，PPO 还需要同时维护奖励模型、价值网络以及参考策略，训练链条较长，调参成本较高。
 \end{itemize}
 
-\subsubsection{算法简介}
+\subsection{近端策略优化算法}
 
-PPO 的核心思想是构造一个带裁剪的替代目标（clipped surrogate objective），
-限制新策略相对于旧策略的更新幅度，
-从而在保证训练稳定性的同时允许多轮 minibatch 更新。
-记重要性采样比率为
-\begin{equation}
-r_t(\theta)
-=
-\frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t|s_t)},
-\end{equation}
-则 PPO-Clip 的目标函数写为
-\begin{equation}
-\mathcal{L}_{\mathrm{PPO}}(\theta)
-=
-\mathbb{E}_t
-\left[
-\min\!\left(
-r_t(\theta)\hat A_t,\;
-\mathrm{clip}\!\bigl(r_t(\theta),1-\epsilon,1+\epsilon\bigr)\hat A_t
-\right)
-\right],
-\end{equation}
-其中 $\hat A_t$ 为优势函数估计，
-$\epsilon$ 为裁剪阈值。
+PPO 通过剪切概率比来限制策略更新幅度，提高训练稳定性。其核心为交替更新策略网络（Actor）和价值网络（Critic）。
 
-优势函数通常通过 GAE（Generalized Advantage Estimation）计算：
-\begin{equation}
-\hat A_t^{\mathrm{GAE}(\gamma,\lambda)}
-=
-\sum_{l=0}^{\infty}(\gamma\lambda)^l \delta_{t+l},
-\end{equation}
-其中
-\begin{equation}
-\delta_t
-=
-r_t+\gamma V(s_{t+1})-V(s_t).
-\end{equation}
+\subsection*{核心公式}
+定义概率比：
+\[
+r_t(\theta) = \frac{\pi_{\theta}(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}
+\]
+剪切后的策略目标函数（需最大化）：
+\[
+L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min \left( r_t(\theta) \hat{A}_t,\ \text{clip}\big(r_t(\theta), 1-\epsilon, 1+\epsilon\big) \hat{A}_t \right) \right]
+\]
+其中 $\epsilon$ 通常取 0.2，$\hat{A}_t$ 为优势函数估计（如 GAE）。
 
-在 RLHF 中，
-PPO 往往还会结合 KL 惩罚项，
-使优化目标写成
-\begin{equation}
-\mathcal{L}_{\mathrm{RLHF\mbox{-}PPO}}
-=
-\mathbb{E}
-\left[
-\mathcal{L}_{\mathrm{PPO}}(\theta)
-\right]
--
-\beta\,
-D_{\mathrm{KL}}\!\bigl(\pi_\theta \,\|\, \pi_{\mathrm{ref}}\bigr).
-\end{equation}
+价值网络损失（最小化）：
+\[
+L^{\text{VF}}(\phi) = \hat{\mathbb{E}}_t \left[ \big( V_{\phi}(s_t) - R_t \big)^2 \right]
+\]
+为鼓励探索，常在策略目标中加入熵奖励 $S[\pi_{\theta}](s_t)$，于是策略网络的最终优化目标为：
+\[
+L^{\text{Policy}}(\theta) = L^{\text{CLIP}}(\theta) + c_2 \cdot S[\pi_{\theta}](s_t)
+\]
+其中 $c_2$ 为熵系数（通常取 0.01）。
 
-\subsubsection{算法创新点}
+\subsection*{算法流程}
+\begin{enumerate}
+    \item 初始化策略网络参数 $\theta$、价值网络参数 $\phi$，以及旧策略参数 $\theta_{\text{old}} \leftarrow \theta$。
+    \item 对于每次迭代：
+    \begin{enumerate}
+        \item 使用 $\pi_{\theta_{\text{old}}}$ 与环境交互，收集 $N$ 条轨迹（或固定步数），存储状态、动作、奖励。
+        \item 计算每个时间步的优势估计 $\hat{A}_t$（如 GAE）和折扣回报 $R_t$。
+        \item 对收集到的数据，重复更新 $K$ 轮（通常 $K=3\sim10$）：
+        \begin{enumerate}
+            \item 将数据划分为小批量。
+            \item 对于每个小批量：
+            \begin{itemize}
+                \item 计算概率比 $r_t(\theta)$。
+                \item 计算策略损失 $L^{\text{Policy}}(\theta)$（取负号转为最小化问题）。
+                \item 使用梯度上升（或下降）更新 $\theta$。
+                \item 计算价值损失 $L^{\text{VF}}(\phi)$，使用梯度下降更新 $\phi$。
+            \end{itemize}
+        \end{enumerate}
+        \item 更新旧策略：$\theta_{\text{old}} \leftarrow \theta$。
+    \end{enumerate}
+\end{enumerate}
 
-\begin{itemize}
-    \item 通过裁剪重要性采样比率，使用一阶优化近似信赖域约束，在稳定性与实现复杂度之间取得较好平衡。
-    \item 允许同一批采样数据进行多轮更新，从而显著提高样本利用率。
-    \item 相比 TRPO，PPO 不再依赖复杂的二阶优化与硬约束求解，更适合大规模深度模型训练。
-    \item 在 RLHF 中，PPO 形成了“奖励模型 + 价值网络 + KL 正则 + 策略更新”的标准范式，为后续偏好优化算法提供了统一参照系。
-\end{itemize}
+\subsection*{伪代码}
+\begin{algorithm}[H]
+\caption{PPO-Clip 算法（Actor-Critic 版本）}
+\begin{algorithmic}[1]
+\State 初始化 $\theta$, $\phi$, $\theta_{\text{old}} \gets \theta$
+\For{每次迭代}
+    \State 采集轨迹 $\mathcal{D} \gets \{(s_t, a_t, r_t)\}$ 使用 $\pi_{\theta_{\text{old}}}$
+    \State 计算优势估计 $\hat{A}_t$ 和回报 $R_t$（GAE）
+    \For{$epoch = 1$ 到 $K$}
+        \For{每个小批量 $(s, a, \hat{A}, R)$}
+            \State $r(\theta) \gets \frac{\pi_{\theta}(a|s)}{\pi_{\theta_{\text{old}}}(a|s)}$
+            \State $L^{\text{CLIP}} \gets \min\big(r(\theta)\hat{A},\ \text{clip}(r(\theta),1-\epsilon,1+\epsilon)\hat{A}\big)$
+            \State $S \gets \mathcal{H}\big(\pi_{\theta}(\cdot|s)\big)$
+            \State $L^{\text{Policy}} \gets L^{\text{CLIP}} + c_2 \cdot S$   \Comment{待最大化}
+            \State 更新策略：$\theta \gets \theta + \alpha \nabla_{\theta} L^{\text{Policy}}$
+            \State $L^{\text{VF}} \gets \big(V_{\phi}(s) - R\big)^2$ \Comment{待最小化}
+            \State 更新价值：$\phi \gets \phi - \alpha \nabla_{\phi} L^{\text{VF}}$
+        \EndFor
+    \EndFor
+    \State $\theta_{\text{old}} \gets \theta$
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\subsection*{说明}
+- 策略网络使用梯度\textbf{上升}（或最小化 $-L^{\text{Policy}}$）更新。
+- 价值网络使用梯度\textbf{下降}更新 $L^{\text{VF}}$。
+- 两个网络通常共用同一个优化器（如 Adam）或分别设置，但更新目标是明确分开的。
+- 上述写法避免了“总损失”混叠，符合 PPO 的标准实现。
 
 \section{DPO（Direct Preference Optimization）}
 

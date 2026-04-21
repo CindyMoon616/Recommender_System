@@ -1,0 +1,259 @@
+\documentclass[UTF8]{ctexart}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\setlist[itemize]{leftmargin=2em}
+\setlength{\parskip}{0.5em}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\begin{document}
+\section{PPO（近端策略优化）算法流程与伪代码}
+
+\subsection*{算法流程}
+
+\begin{enumerate}
+    \item 初始化策略网络参数 $\theta$、价值网络参数 $\phi$，
+    以及旧策略参数 $\theta_{\text{old}}\leftarrow\theta$。
+    
+    \item 对于每次迭代：
+    \begin{enumerate}
+        \item 使用旧策略 $\pi_{\theta_{\text{old}}}$ 与环境交互，
+        收集轨迹数据
+        \[
+        \mathcal{D}=\{(s_t,a_t,r_t,s_{t+1})\}.
+        \]
+        
+        \item 根据奖励序列计算折扣回报 $R_t$ 和优势估计 $\hat{A}_t$。
+        
+        \item 对采集到的数据重复更新 $K$ 轮：
+        \begin{enumerate}
+            \item 将数据划分为小批量。
+            
+            \item 对每个小批量，计算新旧策略概率比：
+            \[
+            r_t(\theta)
+            =
+            \frac{
+            \pi_{\theta}(a_t|s_t)
+            }{
+            \pi_{\theta_{\text{old}}}(a_t|s_t)
+            }.
+            \]
+            
+            \item 计算裁剪策略目标：
+            \[
+            L^{\text{CLIP}}(\theta)
+            =
+            \min
+            \left(
+            r_t(\theta)\hat{A}_t,
+            \text{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\hat{A}_t
+            \right).
+            \]
+            
+            \item 更新策略网络，使 $L^{\text{CLIP}}$ 最大化。
+            
+            \item 计算价值函数损失：
+            \[
+            L^{\text{VF}}(\phi)
+            =
+            \left(
+            V_{\phi}(s_t)-R_t
+            \right)^2.
+            \]
+            
+            \item 更新价值网络，使 $L^{\text{VF}}$ 最小化。
+        \end{enumerate}
+        
+        \item 更新旧策略参数：
+        \[
+        \theta_{\text{old}}\leftarrow\theta.
+        \]
+    \end{enumerate}
+\end{enumerate}
+
+\subsection*{伪代码}
+
+\begin{algorithm}[H]
+\caption{PPO-Clip 算法（Actor-Critic 版本）}
+\begin{algorithmic}[1]
+\State 初始化策略网络参数 $\theta$、价值网络参数 $\phi$
+\State 初始化旧策略参数 $\theta_{\text{old}}\gets\theta$
+
+\For{每次迭代}
+    \State 使用 $\pi_{\theta_{\text{old}}}$ 采集轨迹数据 $\mathcal{D}$
+    \State 计算折扣回报 $R_t$ 和优势估计 $\hat{A}_t$
+    
+    \For{$epoch=1$ 到 $K$}
+        \For{每个小批量 $(s,a,\hat{A},R)$}
+            \State 计算概率比：
+            \[
+            r(\theta)
+            \gets
+            \frac{\pi_{\theta}(a|s)}
+            {\pi_{\theta_{\text{old}}}(a|s)}
+            \]
+            
+            \State 计算裁剪目标：
+            \[
+            L^{\text{CLIP}}
+            \gets
+            \min
+            \left(
+            r(\theta)\hat{A},
+            \text{clip}(r(\theta),1-\epsilon,1+\epsilon)\hat{A}
+            \right)
+            \]
+            
+            \State 计算熵正则：
+            \[
+            S\gets\mathcal{H}(\pi_{\theta}(\cdot|s))
+            \]
+            
+            \State 策略目标：
+            \[
+            L^{\text{Policy}}\gets L^{\text{CLIP}}+c_2S
+            \]
+            
+            \State 更新策略网络：
+            \[
+            \theta\gets\theta+\alpha_{\pi}\nabla_{\theta}L^{\text{Policy}}
+            \]
+            
+            \State 计算价值损失：
+            \[
+            L^{\text{VF}}
+            \gets
+            \left(
+            V_{\phi}(s)-R
+            \right)^2
+            \]
+            
+            \State 更新价值网络：
+            \[
+            \phi\gets\phi-\alpha_V\nabla_{\phi}L^{\text{VF}}
+            \]
+        \EndFor
+    \EndFor
+    
+    \State 更新旧策略：
+    \[
+    \theta_{\text{old}}\gets\theta
+    \]
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+\newpage
+\section{MADDPG（多智能体深度确定性策略梯度）算法流程与伪代码}
+
+\subsection*{算法流程}
+
+\begin{enumerate}
+    \item 对每个智能体 $i$ 初始化 Actor 网络 $\mu_i(o_i;\theta_i)$、Critic 网络
+    $Q_i(x,a_1,\cdots,a_N;\phi_i)$，以及对应的目标网络
+    $\theta_i' \leftarrow \theta_i,\ \phi_i' \leftarrow \phi_i$。
+    
+    \item 初始化经验回放池 $\mathcal{D}$。
+    
+    \item 对于每个 episode：
+    \begin{enumerate}
+        \item 初始化环境，获得所有智能体的初始观测 $o_1,\cdots,o_N$。
+        
+        \item 每个智能体根据自身观测选择动作：
+        \[
+        a_i=\mu_i(o_i;\theta_i)+\mathcal{N}_t.
+        \]
+        
+        \item 所有智能体同时执行动作 $(a_1,\cdots,a_N)$，
+        获得奖励 $(r_1,\cdots,r_N)$ 和下一观测 $(o_1',\cdots,o_N')$。
+        
+        \item 将经验
+        \[
+        (x,a_1,\cdots,a_N,r_1,\cdots,r_N,x')
+        \]
+        存入经验回放池，其中 $x=(o_1,\cdots,o_N)$。
+        
+        \item 从经验回放池中采样小批量数据，对每个智能体 $i$：
+        \begin{enumerate}
+            \item 使用目标 Actor 计算下一时刻动作：
+            \[
+            a_j'=\mu_j'(o_j';\theta_j'),\quad j=1,\cdots,N.
+            \]
+            
+            \item 构造 TD 目标：
+            \[
+            y_i=r_i+\gamma Q_i'(x',a_1',\cdots,a_N';\phi_i').
+            \]
+            
+            \item 更新 Critic：
+            \[
+            L_i(\phi_i)
+            =
+            \frac{1}{B}
+            \sum
+            \left(
+            Q_i(x,a_1,\cdots,a_N;\phi_i)-y_i
+            \right)^2.
+            \]
+            
+            \item 更新 Actor：
+            \[
+            \nabla_{\theta_i}J
+            \approx
+            \frac{1}{B}
+            \sum
+            \nabla_{\theta_i}\mu_i(o_i)
+            \nabla_{a_i}
+            Q_i(x,a_1,\cdots,a_N)
+            \big|_{a_i=\mu_i(o_i)}.
+            \]
+            
+            \item 软更新目标网络：
+            \[
+            \theta_i' \leftarrow \tau\theta_i+(1-\tau)\theta_i',
+            \qquad
+            \phi_i' \leftarrow \tau\phi_i+(1-\tau)\phi_i'.
+            \]
+        \end{enumerate}
+    \end{enumerate}
+\end{enumerate}
+
+\subsection*{伪代码}
+
+\begin{algorithm}[H]
+\caption{MADDPG 算法}
+\begin{algorithmic}[1]
+\State 初始化 $N$ 个智能体的 Actor、Critic 及其目标网络
+\State 初始化经验回放池 $\mathcal{D}$
+\For{每个 episode}
+    \State 初始化环境，获得 $o_1,\cdots,o_N$
+    \For{每个时间步}
+        \For{每个智能体 $i=1,\cdots,N$}
+            \State $a_i \gets \mu_i(o_i;\theta_i)+\mathcal{N}_t$
+        \EndFor
+        \State 执行动作 $(a_1,\cdots,a_N)$
+        \State 获得奖励 $(r_1,\cdots,r_N)$ 和下一观测 $(o_1',\cdots,o_N')$
+        \State $x\gets(o_1,\cdots,o_N)$，$x'\gets(o_1',\cdots,o_N')$
+        \State 存储 $(x,a_1,\cdots,a_N,r_1,\cdots,r_N,x')$ 到 $\mathcal{D}$
+        \State 从 $\mathcal{D}$ 中采样小批量数据
+        
+        \For{每个智能体 $i=1,\cdots,N$}
+            \State $a_j' \gets \mu_j'(o_j';\theta_j'),\quad j=1,\cdots,N$
+            \State $y_i \gets r_i+\gamma Q_i'(x',a_1',\cdots,a_N';\phi_i')$
+            \State $L_i \gets \frac{1}{B}\sum\left(Q_i(x,a_1,\cdots,a_N;\phi_i)-y_i\right)^2$
+            \State $\phi_i \gets \phi_i-\alpha_Q\nabla_{\phi_i}L_i$
+            \State $\theta_i \gets \theta_i+\alpha_{\mu}\nabla_{\theta_i}J$
+            \State $\theta_i' \gets \tau\theta_i+(1-\tau)\theta_i'$
+            \State $\phi_i' \gets \tau\phi_i+(1-\tau)\phi_i'$
+        \EndFor
+        
+        \State $o_i\gets o_i',\quad i=1,\cdots,N$
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+\end{document}
