@@ -37,7 +37,6 @@
     \item 在注意力机制角度，HSTU放弃 Softmax，以保留对推荐至关重要的“强度”信息，同时引入门控 U，以一种极为高效的方式实现了复杂的特征交互
 \end{itemize}
 
-\newpage
 
 \section{OneRec（快手）}
 \subsection{现有算法存在问题：}  
@@ -155,9 +154,95 @@
     \item 提出动态掩码策略以避免信息泄漏
 \end{itemize}
 
+\section{RankMixer（字节）}
 
+\subsection{现有算法存在问题}
+\begin{itemize}
+    \item[（1）]工业级推荐系统在训练与在线服务中同时面临严格的延迟约束与极高的 QPS（系统每秒处理请求数）压力，因此模型扩展不能简单照搬 NLP 领域“大参数换效果”的思路，必须兼顾效果与推理成本。
+    \item[（2）]大量人工设计的交叉特征模块继承自 CPU 时代，其核心算子往往更偏向访存密集而非计算密集，难以充分发挥 GPU 的并行计算能力，导致模型 MFU（Model FLOPs Utilization）较低，扩展性较差。
+    \item[（3）]推荐系统输入由用户、物品、序列、交叉等多种异构特征构成，不同特征处于不同语义子空间。传统统一式特征交互结构难以同时建模跨特征交互与各子空间内部差异，限制了大规模模型的扩展收益。
+\end{itemize}
 
+\subsection{算法简介}
+\begin{itemize}
+    \item[（1）]RankMixer 首先将多种异构特征按语义分组并拼接，再通过 tokenization 映射为多个 feature token，从而将推荐系统中的多字段特征组织为适合 GPU 并行计算的统一表示形式。
+    \item[（2）]在主干结构中，RankMixer 采用多层 RankMixer Block 堆叠。每个 Block 由两部分组成：其一是 Multi-head Token Mixing，用于在不同 token 之间进行高效的信息混合与跨特征交互；其二是 Per-token FFN，用于对每个 token 所对应的特征子空间进行独立建模。
+    \item[（3）]为进一步提升大模型扩展收益，RankMixer 将 Per-token FFN 扩展为 Sparse-MoE 形式，并结合 ReLU Routing 与 Dense-training / Sparse-inference 策略，使高信息 token 能够动态激活更多专家，在控制推理成本的同时提升模型容量。
+\end{itemize}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth, height=0.4\textheight]{6.png}
+    \caption{RankMixer 算法框架图}
+\end{figure}
 
+\subsection{创新点}
+\begin{itemize}
+    \item[（1）]提出面向硬件友好的统一特征交互架构 RankMixer，以 Token Mixing 取代传统自注意力中的二次复杂度交互方式，在保持较强并行性的同时显著提升计算效率与 GPU 利用率。
+    \item[（2）]提出 Per-token FFN 机制，为不同 feature token 分配彼此独立的参数空间，从结构上缓解高频特征对低频或长尾特征的淹没问题，更适合推荐系统中异构特征子空间的建模需求。
+    \item[（3）]针对 RankMixer 中直接使用 Vanilla Sparse-MoE 易出现的统一 top-k 路由不合理与专家训练不足问题，设计了 ReLU Routing 与双路由器的 DTSI-MoE 方案，在保证稀疏推理成本可控的同时提升专家利用率与模型扩展能力。
+\end{itemize}
 
+\section{LONGER（字节）}
+
+\subsection{现有算法存在问题}
+\begin{itemize}
+    \item[•] \textbf{两阶段检索方法存在链路割裂问题。} 现有工业界常用做法是先从超长用户行为序列中检索出与当前候选物品最相关的 Top-$k$ 行为，再交给短序列模型进行端到端建模。该方式虽然降低了计算成本，但会导致上游检索与下游排序目标不一致，难以充分保留原始超长序列中的完整信息。
+    
+    \item[•] \textbf{预训练用户表征方法属于间接建模。} 一类常见方案是先在源模型中对长序列进行预训练，再压缩得到用户表征向量并迁移到下游推荐模型中。这种方法本质上并不是对原始超长行为序列进行直接建模，而是通过中间用户向量间接感知用户兴趣，因此容易损失细粒度行为信息。
+    
+    \item[•] \textbf{记忆增强方法和直接长序列建模都面临效率瓶颈。} 记忆网络类方法通常需要较长时间训练才能在记忆槽中积累较高命中率，而直接使用标准 Transformer 处理长序列时，自注意力复杂度随序列长度平方增长，计算与显存开销过高，因此大规模工业场景下难以高效部署。
+\end{itemize}
+
+\subsection{算法简介}
+\begin{itemize}
+    \item[•] \textbf{LONGER 是面向工业推荐的端到端超长序列建模框架。} 该方法全称为 Long-sequence Optimized traNsformer for GPU-Efficient Recommenders，目标是在工业推荐系统中直接建模超长用户行为序列，并将可建模的序列长度扩展到万级。
+    
+    \item[•] \textbf{模型主体由全局标记、Token Merge 与混合注意力组成。} LONGER 将输入组织为 Global Tokens 与原始用户行为序列两部分，其中 Global Tokens 用于聚合候选物品、用户身份及上下文等全局信息；随后利用 Token Merge 将相邻行为分组压缩，并在组内引入轻量级 InnerTrans 建模局部交互；在主干结构上，先通过 Cross Causal Attention 用压缩查询关注整段序列，再堆叠 Self Causal Attention 建模更高阶依赖关系。
+    
+    \item[•] \textbf{系统层面进一步配套训练与部署优化。} 为了支持工业级上线，LONGER 设计了全同步 GPU 训练框架，并结合混合精度训练、激活重计算和 KV Cache Serving 等工程优化手段，以降低训练显存占用和在线推理延迟，提升整体吞吐效率。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth, height=0.4\textheight]{7.png}
+    \caption{LONGER算法框架图}
+\end{figure}
+
+\subsection{创新点}
+\begin{itemize}
+    \item[•] \textbf{提出 Global Tokens 机制。} 通过在输入端加入候选物品表征、UID embedding、可学习 CLS token 等全局标记，LONGER 能够在长序列中建立稳定的信息锚点，增强用户历史、候选物品与上下文特征之间的交互，同时缓解长上下文注意力中的注意力塌陷问题。
+    
+    \item[•] \textbf{提出 Token Merge + InnerTrans + Hybrid Attention 的高效长序列建模方案。} LONGER 先利用 Token Merge 对长序列做分组压缩，再用 InnerTrans 捕捉组内局部模式，最后结合 Cross-Attention 与 Self-Attention 兼顾全局依赖和局部信息，在基本不损失效果的前提下显著降低计算量，论文中指出该设计可减少约 50\% 的 FLOPs。
+    
+    \item[•] \textbf{提出面向工业部署的一整套 GPU 高效优化框架。} LONGER 不仅是模型结构创新，还包含统一稠密与稀疏参数更新的全同步训练框架、混合精度与重计算策略，以及面向多候选打分场景的 KV Cache Serving 机制，从而使超长序列模型能够真正落地到广告和电商等大规模工业推荐场景。
+\end{itemize}
+\section{Tiger(谷歌)}
+
+\subsection{现有算法存在问题}
+\begin{itemize}
+\item[•] 传统推荐检索通常采用双塔结构，将用户侧与物品侧映射到同一向量空间，再依赖 ANN/MIPS 进行候选召回；这类方式本质上仍是“表示学习 + 近邻检索”的范式，检索过程与索引构建成本较高。
+\item[•] 许多现有方法使用随机的原子式 item ID 或为每个物品单独学习 embedding，这种表示缺乏显式语义结构，难以在语义相近物品之间共享知识，也更容易受到推荐系统反馈回路的影响。
+\item[•] 当物品库规模持续增大时，传统方法往往需要为每个 item 维护独立 embedding 或建立额外索引，存储与服务成本随物品数线性增长；同时，对新上架或低频物品的泛化能力较弱，冷启动表现受限。
+\end{itemize}
+
+\subsection{算法简介}
+\begin{itemize}
+\item[•] TIGER 首先利用预训练内容编码器将物品标题、品牌、类别等内容特征映射为语义向量，再通过 RQ-VAE 对连续语义向量进行残差量化，为每个物品生成长度为 4 的 Semantic ID。
+\item[•] 在序列推荐任务中，用户历史交互序列会被转换为一串 Semantic ID token 序列，并输入 Transformer 编码器--解码器模型；模型以自回归方式逐 token 预测用户下一次可能交互物品的 Semantic ID。
+\item[•] 推理阶段不再显式构建传统 ANN 检索索引，而是由生成模型直接输出目标物品的 Semantic ID，再通过查找表映射回具体 item，从而将推荐召回过程改写为生成式检索过程。
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth, height=0.25\textheight]{8.png}
+    \caption{TIGER算法框架图}
+\end{figure}
+
+\subsection{创新点}
+\begin{itemize}
+\item[•] 提出了面向序列推荐的生成式检索框架 TIGER，不再采用传统“用户向量--物品向量匹配 + ANN 检索”的召回方式，而是直接生成下一物品的 Semantic ID。
+\item[•] 设计了基于内容语义的层次化 Semantic ID 表示方法，通过 RQ-VAE 将 item 内容量化为多级离散 code，使语义相近的物品能够共享部分前缀表示，从而增强模型的泛化能力。
+\item[•] 该框架除提升 Recall 与 NDCG 指标外，还天然带来两项重要能力：一是利用语义信息改善新物品与低频物品的冷启动推荐；二是借助分层 token 与温度采样机制，更灵活地控制推荐结果的多样性。
+\end{itemize}
 \end{document}
